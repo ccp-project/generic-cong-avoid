@@ -1,0 +1,12 @@
+[package]
+name = "ccp_reno"
+version = "0.1.5"
+authors = ["Akshay Narayan <akshayn@mit.edu>"]
+
+[dependencies]
+clap="2.29"
+portus = { path = ".." }
+slog = {version = "2"}
+slog-async = "2"
+slog-term = "2"
+time="0.1"
