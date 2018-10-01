@@ -4,14 +4,14 @@ extern crate time;
 #[macro_use]
 extern crate slog;
 
-extern crate ccp_generic_cong_avoid;
+extern crate generic_cong_avoid;
 extern crate portus;
 
-use ccp_generic_cong_avoid::reno::Reno;
+use generic_cong_avoid::reno::Reno;
 
 fn main() {
     let log = portus::algs::make_logger();
-    let (cfg, ipc) = ccp_generic_cong_avoid::make_args("CCP Reno")
+    let (cfg, ipc) = generic_cong_avoid::make_args("CCP Reno")
         .map_err(|e| warn!(log, "bad argument"; "err" => ?e))
         .unwrap_or_default();
 
@@ -22,5 +22,5 @@ fn main() {
         "slow_start_mode" => ?cfg.ss,
     );
 
-    ccp_generic_cong_avoid::start::<Reno>(ipc.as_str(), log, cfg);
+    generic_cong_avoid::start::<Reno>(ipc.as_str(), log, cfg);
 }

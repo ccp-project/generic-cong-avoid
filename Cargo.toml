@@ -1,11 +1,11 @@
 [package]
-name = "ccp_generic_cong_avoid"
-version = "0.2.3"
+name = "generic_cong_avoid"
+version = "0.1.0"
 authors = ["Akshay Narayan <akshayn@mit.edu>"]
 
 [dependencies]
 clap="2.29"
-portus = { path = ".." }
+portus = "0.3.3"
 slog = {version = "2"}
 slog-async = "2"
 slog-term = "2"
