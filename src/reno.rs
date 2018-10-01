@@ -15,7 +15,7 @@ impl GenericCongAvoidAlg for Reno {
         String::from("reno")
     }
 
-    fn new(init_cwnd: u32, mss: u32) -> Self {
+    fn new(_cfg: Self::Config, init_cwnd: u32, mss: u32) -> Self {
         Reno {
             mss,
             init_cwnd: f64::from(init_cwnd),

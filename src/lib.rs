@@ -17,7 +17,7 @@ pub use bin_helper::{make_args, start};
 pub trait GenericCongAvoidAlg {
     type Config;
     fn name() -> String;
-    fn new(init_cwnd: u32, mss: u32) -> Self;
+    fn new(config: Self::Config, init_cwnd: u32, mss: u32) -> Self;
     fn curr_cwnd(&self) -> u32;
     fn set_cwnd(&mut self, cwnd: u32);
     fn increase(&mut self, m: &GenericCongAvoidMeasurements);
