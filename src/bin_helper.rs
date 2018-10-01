@@ -7,7 +7,7 @@ use slog;
 use std;
 use time;
 
-pub fn make_args(name: &str) -> Result<(GenericCongAvoidConfig, String), std::num::ParseIntError> {
+pub fn make_args<T: GenericCongAvoidAlg>(name: &str) -> Result<(GenericCongAvoidConfig<T>, String), std::num::ParseIntError> {
     let ss_thresh_default = format!("{}", DEFAULT_SS_THRESH);
     let matches = clap::App::new(name)
         .version("0.2.0")
@@ -47,7 +47,10 @@ pub fn make_args(name: &str) -> Result<(GenericCongAvoidConfig, String), std::nu
              .default_value("0")
              .help("Number of RTTs to wait after a loss event to allow further CWND reductions. \
                    Default 0 means CWND deficit counting is enforced strictly with no timeout."))
+        .args(&T::args())
         .get_matches();
+
+    let ipc = String::from(matches.value_of("ipc").unwrap());
 
     Ok((
         GenericCongAvoidConfig {
@@ -70,12 +73,13 @@ pub fn make_args(name: &str) -> Result<(GenericCongAvoidConfig, String), std::nu
             ss: if matches.is_present("ss_in_fold") {GenericCongAvoidConfigSS::Datapath} else {GenericCongAvoidConfigSS::Ccp},
             use_compensation: matches.is_present("compensate_update"),
             deficit_timeout: u32::from_str_radix(matches.value_of("deficit_timeout").unwrap(), 10)?,
+            inner_cfg: T::config(matches),
         },
-        String::from(matches.value_of("ipc").unwrap()),
+        ipc,
     ))
 }
 
-pub fn start<T: GenericCongAvoidAlg>(ipc: &str, log: slog::Logger, cfg: GenericCongAvoidConfig)
+pub fn start<T: GenericCongAvoidAlg>(ipc: &str, log: slog::Logger, cfg: GenericCongAvoidConfig<T>)
 where T: 'static
 {
     match ipc {

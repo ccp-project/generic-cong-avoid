@@ -15,8 +15,10 @@ mod bin_helper;
 pub use bin_helper::{make_args, start};
 
 pub trait GenericCongAvoidAlg {
-    type Config;
+    type Config: Default + Clone;
     fn name() -> String;
+    fn args<'a, 'b>() -> Vec<clap::Arg<'a, 'b>> { vec![] }
+    fn config(_args: clap::ArgMatches) -> Self::Config { Default::default() }
     fn new(config: Self::Config, init_cwnd: u32, mss: u32) -> Self;
     fn curr_cwnd(&self) -> u32;
     fn set_cwnd(&mut self, cwnd: u32);
@@ -57,17 +59,31 @@ pub enum GenericCongAvoidConfigSS {
     Ccp,
 }
 
-#[derive(Clone, Copy)]
-pub struct GenericCongAvoidConfig {
+pub struct GenericCongAvoidConfig<T: GenericCongAvoidAlg> {
     pub ss_thresh: u32,
     pub init_cwnd: u32,
     pub report: GenericCongAvoidConfigReport,
     pub ss: GenericCongAvoidConfigSS,
     pub use_compensation: bool,
     pub deficit_timeout: u32,
+    pub inner_cfg: T::Config,
 }
 
-impl Default for GenericCongAvoidConfig {
+impl<T: GenericCongAvoidAlg> Clone for GenericCongAvoidConfig<T> {
+	fn clone(&self) -> Self {
+        GenericCongAvoidConfig {
+            ss_thresh: self.ss_thresh,
+            init_cwnd: self.init_cwnd,
+            report: self.report,
+            ss: self.ss,
+            use_compensation: self.use_compensation,
+            deficit_timeout: self.deficit_timeout,
+            inner_cfg: self.inner_cfg.clone(),
+        }
+	}
+}
+
+impl<T: GenericCongAvoidAlg> Default for GenericCongAvoidConfig<T> {
     fn default() -> Self {
         GenericCongAvoidConfig {
             ss_thresh: DEFAULT_SS_THRESH,
@@ -76,6 +92,7 @@ impl Default for GenericCongAvoidConfig {
             ss: GenericCongAvoidConfigSS::Ccp,
             use_compensation: false,
             deficit_timeout: 0,
+            inner_cfg: Default::default(),
         }
     }
 }
@@ -247,7 +264,7 @@ impl<T: Ipc, A: GenericCongAvoidAlg> GenericCongAvoid<T, A> {
 }
 
 impl<T: Ipc, A: GenericCongAvoidAlg> CongAlg<T> for GenericCongAvoid<T, A> {
-    type Config = GenericCongAvoidConfig;
+    type Config = GenericCongAvoidConfig<A>;
 
     fn name() -> String {
         A::name()
@@ -378,7 +395,7 @@ impl<T: Ipc, A: GenericCongAvoidAlg> CongAlg<T> for GenericCongAvoid<T, A> {
             init_cwnd,
             curr_cwnd_reduction: 0,
             last_cwnd_reduction: time::now().to_timespec() - time::Duration::milliseconds(500),
-            alg: A::new(init_cwnd, info.mss),
+            alg: A::new(cfg.config.inner_cfg, init_cwnd, info.mss),
         };
 
         match (cfg.config.ss, cfg.config.report) {
