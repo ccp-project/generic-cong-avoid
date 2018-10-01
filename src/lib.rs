@@ -6,7 +6,7 @@ extern crate portus;
 
 use portus::{CongAlg, Config, Datapath, DatapathInfo, DatapathTrait, Report};
 use portus::ipc::Ipc;
-use portus::lang::{Bin, Scope};
+use portus::lang::Scope;
 
 pub mod reno;
 pub mod cubic;
