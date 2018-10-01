@@ -1,6 +1,7 @@
 extern crate time;
 
 use GenericCongAvoidAlg;
+use GenericCongAvoidConfig;
 use GenericCongAvoidMeasurements;
 
 pub struct Cubic {
@@ -78,6 +79,8 @@ impl Cubic {
 }
 
 impl GenericCongAvoidAlg for Cubic {
+    type Config = GenericCongAvoidConfig;
+    
     fn name() -> String {
         String::from("cubic")
     }

@@ -1,4 +1,5 @@
 use GenericCongAvoidAlg;
+use GenericCongAvoidConfig;
 use GenericCongAvoidMeasurements;
 
 pub struct Reno {
@@ -8,6 +9,8 @@ pub struct Reno {
 }
 
 impl GenericCongAvoidAlg for Reno {
+    type Config = GenericCongAvoidConfig;
+    
     fn name() -> String {
         String::from("reno")
     }

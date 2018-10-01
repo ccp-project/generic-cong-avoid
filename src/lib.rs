@@ -15,6 +15,7 @@ mod bin_helper;
 pub use bin_helper::{make_args, start};
 
 pub trait GenericCongAvoidAlg {
+    type Config;
     fn name() -> String;
     fn new(init_cwnd: u32, mss: u32) -> Self;
     fn curr_cwnd(&self) -> u32;
