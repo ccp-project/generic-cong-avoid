@@ -1,4 +1,5 @@
 extern crate time;
+extern crate slog;
 
 use GenericCongAvoidAlg;
 use GenericCongAvoidMeasurements;
@@ -84,7 +85,7 @@ impl GenericCongAvoidAlg for Cubic {
         String::from("cubic")
     }
 
-    fn new(_cfg: Self::Config, init_cwnd: u32, mss: u32) -> Self {
+    fn new(_cfg: Self::Config, _logger: Option<slog::Logger>, init_cwnd: u32, mss: u32) -> Self {
         Cubic {
             pkt_size: mss,
             init_cwnd: init_cwnd / mss,

@@ -19,7 +19,7 @@ pub trait GenericCongAvoidAlg {
     fn name() -> String;
     fn args<'a, 'b>() -> Vec<clap::Arg<'a, 'b>> { vec![] }
     fn config(_args: clap::ArgMatches) -> Self::Config { Default::default() }
-    fn new(config: Self::Config, init_cwnd: u32, mss: u32) -> Self;
+    fn new(config: Self::Config, logger: Option<slog::Logger>, init_cwnd: u32, mss: u32) -> Self;
     fn curr_cwnd(&self) -> u32;
     fn set_cwnd(&mut self, cwnd: u32);
     fn increase(&mut self, m: &GenericCongAvoidMeasurements);
@@ -383,7 +383,7 @@ impl<T: Ipc, A: GenericCongAvoidAlg> CongAlg<T> for GenericCongAvoid<T, A> {
 
         let mut s = Self {
             control_channel: control,
-            logger: cfg.logger,
+            logger: cfg.logger.clone(),
             report_option: cfg.config.report,
             sc: Default::default(),
             ss_thresh: cfg.config.ss_thresh,
@@ -395,7 +395,7 @@ impl<T: Ipc, A: GenericCongAvoidAlg> CongAlg<T> for GenericCongAvoid<T, A> {
             init_cwnd,
             curr_cwnd_reduction: 0,
             last_cwnd_reduction: time::now().to_timespec() - time::Duration::milliseconds(500),
-            alg: A::new(cfg.config.inner_cfg, init_cwnd, info.mss),
+            alg: A::new(cfg.config.inner_cfg, cfg.logger, init_cwnd, info.mss),
         };
 
         match (cfg.config.ss, cfg.config.report) {
