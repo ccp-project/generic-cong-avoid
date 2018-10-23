@@ -2,12 +2,14 @@ extern crate time;
 extern crate slog;
 
 use GenericCongAvoidAlg;
+use GenericCongAvoidFlow;
 use GenericCongAvoidMeasurements;
 
+#[derive(Default)]
 pub struct Cubic {
     pkt_size: u32,
     init_cwnd: u32,
-    
+
     cwnd: f64,
     cwnd_cnt: f64,
     tcp_friendliness: bool,
@@ -17,7 +19,7 @@ pub struct Cubic {
     wlast_max: f64,
     epoch_start: f64,
     origin_point: f64,
-    d_min:  f64,
+    d_min: f64,
     wtcp: f64,
     k: f64,
     ack_cnt: f64,
@@ -29,10 +31,11 @@ impl Cubic {
     fn cubic_update(&mut self) {
         self.ack_cnt += 1.0;
         if self.epoch_start <= 0.0 {
-            self.epoch_start = (time::get_time().sec as f64) + f64::from(time::get_time().nsec)/1_000_000_000.0;
+            self.epoch_start =
+                (time::get_time().sec as f64) + f64::from(time::get_time().nsec) / 1_000_000_000.0;
             if self.cwnd < self.wlast_max {
-                let temp = (self.wlast_max-self.cwnd)/self.c;
-                self.k = (temp.max(0.0)).powf(1.0/3.0);
+                let temp = (self.wlast_max - self.cwnd) / self.c;
+                self.k = (temp.max(0.0)).powf(1.0 / 3.0);
                 self.origin_point = self.wlast_max;
             } else {
                 self.k = 0.0;
@@ -43,8 +46,11 @@ impl Cubic {
             self.wtcp = self.cwnd
         }
 
-        let t = (time::get_time().sec as f64) + f64::from(time::get_time().nsec)/1_000_000_000.0 + self.d_min - self.epoch_start;
-        let target = self.origin_point + self.c*((t-self.k)*(t-self.k)*(t-self.k));
+        let t = (time::get_time().sec as f64)
+            + f64::from(time::get_time().nsec) / 1_000_000_000.0
+            + self.d_min
+            - self.epoch_start;
+        let target = self.origin_point + self.c * ((t - self.k) * (t - self.k) * (t - self.k));
         if target > self.cwnd {
             self.cnt = self.cwnd / (target - self.cwnd);
         } else {
@@ -79,13 +85,17 @@ impl Cubic {
 }
 
 impl GenericCongAvoidAlg for Cubic {
-    type Config = ();
+    type Flow = Self;
+
+    fn name() -> &'static str {
+        "cubic"
+    }
     
-    fn name() -> String {
-        String::from("cubic")
+    fn with_args(_: clap::ArgMatches) -> Self {
+        Default::default()
     }
 
-    fn new(_cfg: Self::Config, _logger: Option<slog::Logger>, init_cwnd: u32, mss: u32) -> Self {
+    fn new_flow(&self, _logger: Option<slog::Logger>, init_cwnd: u32, mss: u32) -> Self::Flow {
         Cubic {
             pkt_size: mss,
             init_cwnd: init_cwnd / mss,
@@ -98,7 +108,7 @@ impl GenericCongAvoidAlg for Cubic {
             wlast_max: 0.0f64,
             epoch_start: -0.1f64,
             origin_point: 0.0f64,
-            d_min:  -0.1f64,
+            d_min: -0.1f64,
             wtcp: 0.0f64,
             k: 0.0f64,
             ack_cnt: 0.0f64,
@@ -106,7 +116,9 @@ impl GenericCongAvoidAlg for Cubic {
             cubic_rtt: 0.1f64,
         }
     }
+}
 
+impl GenericCongAvoidFlow for Cubic {
     fn curr_cwnd(&self) -> u32 {
         (self.cwnd * f64::from(self.pkt_size)) as u32
     }
@@ -116,10 +128,10 @@ impl GenericCongAvoidAlg for Cubic {
     }
 
     fn increase(&mut self, m: &GenericCongAvoidMeasurements) {
-        self.cubic_rtt = (f64::from(m.rtt))*0.000_001;
-        let f_rtt = (f64::from(m.rtt))*0.000_001;
-        let no_of_acks = ((f64::from(m.acked))/(f64::from(self.pkt_size))) as u32;
-        for _i in 0..no_of_acks{
+        self.cubic_rtt = (f64::from(m.rtt)) * 0.000_001;
+        let f_rtt = (f64::from(m.rtt)) * 0.000_001;
+        let no_of_acks = ((f64::from(m.acked)) / (f64::from(self.pkt_size))) as u32;
+        for _i in 0..no_of_acks {
             if self.d_min <= 0.0 || f_rtt < self.d_min {
                 self.d_min = f_rtt;
             }
@@ -147,7 +159,7 @@ impl GenericCongAvoidAlg for Cubic {
             self.cwnd = f64::from(self.init_cwnd);
         }
     }
-    
+
     fn reset(&mut self) {
         self.cubic_reset();
     }

@@ -11,16 +11,16 @@ use generic_cong_avoid::reno::Reno;
 
 fn main() {
     let log = portus::algs::make_logger();
-    let (cfg, ipc) = generic_cong_avoid::make_args("CCP Reno")
+    let (alg, ipc) = generic_cong_avoid::make_args("CCP Reno", log.clone())
         .map_err(|e| warn!(log, "bad argument"; "err" => ?e))
-        .unwrap_or_default();
+        .unwrap();
 
     info!(log, "starting CCP"; 
         "algorithm" => "Reno",
         "ipc" => ipc.clone(),
-        "reports" => ?cfg.report,
-        "slow_start_mode" => ?cfg.ss,
+        "reports" => ?alg.report_option,
+        "slow_start_mode" => ?alg.ss,
     );
 
-    generic_cong_avoid::start::<Reno>(ipc.as_str(), log, cfg);
+    generic_cong_avoid::start::<Reno>(ipc.as_str(), log, alg);
 }

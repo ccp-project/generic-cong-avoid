@@ -1,8 +1,10 @@
 extern crate slog;
 
 use GenericCongAvoidAlg;
+use GenericCongAvoidFlow;
 use GenericCongAvoidMeasurements;
 
+#[derive(Default)]
 pub struct Reno {
     mss: u32,
     init_cwnd: f64,
@@ -10,20 +12,26 @@ pub struct Reno {
 }
 
 impl GenericCongAvoidAlg for Reno {
-    type Config = ();
-    
-    fn name() -> String {
-        String::from("reno")
+    type Flow = Self;
+
+    fn name() -> &'static str {
+        "reno"
     }
 
-    fn new(_cfg: Self::Config, _logger: Option<slog::Logger>, init_cwnd: u32, mss: u32) -> Self {
+    fn with_args(_: clap::ArgMatches) -> Self {
+        Default::default()
+    }
+
+    fn new_flow(&self, _logger: Option<slog::Logger>, init_cwnd: u32, mss: u32) -> Self::Flow {
         Reno {
             mss,
             init_cwnd: f64::from(init_cwnd),
             cwnd: f64::from(init_cwnd),
         }
     }
+}
 
+impl GenericCongAvoidFlow for Reno {
     fn curr_cwnd(&self) -> u32 {
         self.cwnd as u32
     }

@@ -11,15 +11,16 @@ use generic_cong_avoid::cubic::Cubic;
 
 fn main() {
     let log = portus::algs::make_logger();
-    let (cfg, ipc) = generic_cong_avoid::make_args("CCP Cubic")
+    let (alg, ipc) = generic_cong_avoid::make_args("CCP Cubic", log.clone())
         .map_err(|e| warn!(log, "bad argument"; "err" => ?e))
-        .unwrap_or_default();
+        .unwrap();
 
     info!(log, "starting CCP"; 
         "algorithm" => "Cubic",
         "ipc" => ipc.clone(),
-        "reports" => ?cfg.report,
+        "reports" => ?alg.report_option,
+        "slow_start_mode" => ?alg.ss,
     );
 
-    generic_cong_avoid::start::<Cubic>(ipc.as_str(), log, cfg);
+    generic_cong_avoid::start::<Cubic>(ipc.as_str(), log, alg);
 }

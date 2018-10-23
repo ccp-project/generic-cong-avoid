@@ -1,12 +1,17 @@
 [package]
 name = "generic_cong_avoid"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Akshay Narayan <akshayn@mit.edu>"]
+description = "A Congestion Control Plane"
+homepage = "https://ccp-project.github.io"
+repository = "https://github.com/ccp-project/generic-cong-avoid"
+license = "ISC"
 
 [dependencies]
-clap="2.29"
-portus = "0.3.3"
+clap = "2.29"
+fnv = "1"
+portus = "0.4"
 slog = {version = "2"}
 slog-async = "2"
 slog-term = "2"
-time="0.1"
+time = "0.1"

@@ -1,13 +1,19 @@
 use clap;
 use clap::Arg;
-use {DEFAULT_SS_THRESH, GenericCongAvoid, GenericCongAvoidAlg, GenericCongAvoidConfig, GenericCongAvoidConfigSS, GenericCongAvoidConfigReport};
 use portus;
 use portus::ipc::{BackendBuilder, Blocking};
 use slog;
 use std;
 use time;
+use {
+    Alg, GenericCongAvoidAlg, GenericCongAvoidConfigReport,
+    GenericCongAvoidConfigSS, DEFAULT_SS_THRESH,
+};
 
-pub fn make_args<T: GenericCongAvoidAlg>(name: &str) -> Result<(GenericCongAvoidConfig<T>, String), std::num::ParseIntError> {
+pub fn make_args<A: GenericCongAvoidAlg>(
+    name: &str,
+    logger: impl Into<Option<slog::Logger>>,
+) -> Result<(Alg<A>, String), std::num::ParseIntError> {
     let ss_thresh_default = format!("{}", DEFAULT_SS_THRESH);
     let matches = clap::App::new(name)
         .version("0.2.0")
@@ -47,82 +53,90 @@ pub fn make_args<T: GenericCongAvoidAlg>(name: &str) -> Result<(GenericCongAvoid
              .default_value("0")
              .help("Number of RTTs to wait after a loss event to allow further CWND reductions. \
                    Default 0 means CWND deficit counting is enforced strictly with no timeout."))
-        .args(&T::args())
+        .args(&A::args())
         .get_matches();
 
     let ipc = String::from(matches.value_of("ipc").unwrap());
 
     Ok((
-        GenericCongAvoidConfig {
+        Alg {
             ss_thresh: u32::from_str_radix(matches.value_of("ss_thresh").unwrap(), 10)?,
             init_cwnd: u32::from_str_radix(matches.value_of("init_cwnd").unwrap(), 10)?,
-            report: if matches.is_present("report_per_ack") {
+            report_option: if matches.is_present("report_per_ack") {
                 GenericCongAvoidConfigReport::Ack
             } else if matches.is_present("report_per_interval") {
-                GenericCongAvoidConfigReport::Interval(
-                    time::Duration::milliseconds(matches
+                GenericCongAvoidConfigReport::Interval(time::Duration::milliseconds(
+                    matches
                         .value_of("report_per_interval")
                         .unwrap()
                         .parse()
-                        .unwrap()
-                    )
-                )
+                        .unwrap(),
+                ))
             } else {
                 GenericCongAvoidConfigReport::Rtt
             },
-            ss: if matches.is_present("ss_in_fold") {GenericCongAvoidConfigSS::Datapath} else {GenericCongAvoidConfigSS::Ccp},
+            ss: if matches.is_present("ss_in_fold") {
+                GenericCongAvoidConfigSS::Datapath
+            } else {
+                GenericCongAvoidConfigSS::Ccp
+            },
             use_compensation: matches.is_present("compensate_update"),
             deficit_timeout: u32::from_str_radix(matches.value_of("deficit_timeout").unwrap(), 10)?,
-            inner_cfg: T::config(matches),
+            logger: logger.into(),
+            alg: A::with_args(matches),
         },
         ipc,
     ))
 }
 
-pub fn start<T: GenericCongAvoidAlg>(ipc: &str, log: slog::Logger, cfg: GenericCongAvoidConfig<T>)
-where T: 'static
+pub fn start<A: GenericCongAvoidAlg>(ipc: &str, log: slog::Logger, alg: Alg<A>)
+where
+    A: 'static,
 {
     match ipc {
         "unix" => {
             use portus::ipc::unix::Socket;
             let b = Socket::<Blocking>::new("in", "out")
-                .map(|sk| BackendBuilder {sock: sk})
+                .map(|sk| BackendBuilder { sock: sk })
                 .expect("ipc initialization");
-            portus::run::<_, GenericCongAvoid<_, T>>(
+            portus::run::<_, Alg<A>>(
                 b,
-                &portus::Config {
+                portus::Config {
                     logger: Some(log),
-                    config: cfg,
-                }
-            ).unwrap();
+                },
+                alg,
+            )
+            .unwrap();
         }
         #[cfg(all(target_os = "linux"))]
         "netlink" => {
             use portus::ipc::netlink::Socket;
             let b = Socket::<Blocking>::new()
-                .map(|sk| BackendBuilder {sock: sk})
+                .map(|sk| BackendBuilder { sock: sk })
                 .expect("ipc initialization");
-            portus::run::<_, GenericCongAvoid<_, T>>(
+            portus::run::<_, Alg<A>>(
                 b,
-                &portus::Config {
+                portus::Config {
                     logger: Some(log),
-                    config: cfg,
-                }
-            ).unwrap();
+                },
+                alg
+            )
+            .unwrap();
         }
         #[cfg(all(target_os = "linux"))]
         "char" => {
             use portus::ipc::kp::Socket;
             let b = Socket::<Blocking>::new()
-                .map(|sk| BackendBuilder {sock: sk})
+                .map(|sk| BackendBuilder { sock: sk })
                 .expect("char initialization");
-            portus::run::<_, GenericCongAvoid<_, T>>(
+            portus::run::<_, Alg<A>>(
                 b,
-                &portus::Config {
+                portus::Config {
                     logger: Some(log),
-                    config: cfg,
-                }
-            ).unwrap()
+                },
+                alg
+            )
+            .unwrap()
         }
         _ => unreachable!(),
     }

@@ -1,50 +1,31 @@
 extern crate clap;
+extern crate fnv;
 extern crate time;
 #[macro_use]
 extern crate slog;
 extern crate portus;
 
-use portus::{CongAlg, Config, Datapath, DatapathInfo, DatapathTrait, Report};
+use fnv::FnvHashMap as HashMap;
 use portus::ipc::Ipc;
 use portus::lang::Scope;
+use portus::{CongAlg, Datapath, DatapathInfo, DatapathTrait, Report};
 
-pub mod reno;
 pub mod cubic;
+pub mod reno;
 
 mod bin_helper;
 pub use bin_helper::{make_args, start};
 
-pub trait GenericCongAvoidAlg {
-    type Config: Default + Clone;
-    fn name() -> String;
-    fn args<'a, 'b>() -> Vec<clap::Arg<'a, 'b>> { vec![] }
-    fn config(_args: clap::ArgMatches) -> Self::Config { Default::default() }
-    fn new(config: Self::Config, logger: Option<slog::Logger>, init_cwnd: u32, mss: u32) -> Self;
-    fn curr_cwnd(&self) -> u32;
-    fn set_cwnd(&mut self, cwnd: u32);
-    fn increase(&mut self, m: &GenericCongAvoidMeasurements);
-    fn reduction(&mut self, m: &GenericCongAvoidMeasurements);
-    fn reset(&mut self) {}
-}
-
-pub struct GenericCongAvoid<T: Ipc, A: GenericCongAvoidAlg> {
-    report_option: GenericCongAvoidConfigReport,
-    use_compensation: bool,
-    deficit_timeout: u32,
-    control_channel: Datapath<T>,
-    logger: Option<slog::Logger>,
-    sc: Scope,
-    ss_thresh: u32,
-    in_startup: bool,
-    mss: u32,
-    rtt: u32,
-    init_cwnd: u32,
-    curr_cwnd_reduction: u32,
-    last_cwnd_reduction: time::Timespec,
-    alg: A,
-}
-
 pub const DEFAULT_SS_THRESH: u32 = 0x7fff_ffff;
+
+pub struct GenericCongAvoidMeasurements {
+    pub acked: u32,
+    pub was_timeout: bool,
+    pub sacked: u32,
+    pub loss: u32,
+    pub rtt: u32,
+    pub inflight: u32,
+}
 
 #[derive(Debug, Clone, Copy)]
 pub enum GenericCongAvoidConfigReport {
@@ -59,220 +40,48 @@ pub enum GenericCongAvoidConfigSS {
     Ccp,
 }
 
-pub struct GenericCongAvoidConfig<T: GenericCongAvoidAlg> {
-    pub ss_thresh: u32,
-    pub init_cwnd: u32,
-    pub report: GenericCongAvoidConfigReport,
-    pub ss: GenericCongAvoidConfigSS,
-    pub use_compensation: bool,
+pub trait GenericCongAvoidFlow {
+    fn curr_cwnd(&self) -> u32;
+    fn set_cwnd(&mut self, cwnd: u32);
+    fn increase(&mut self, m: &GenericCongAvoidMeasurements);
+    fn reduction(&mut self, m: &GenericCongAvoidMeasurements);
+    fn reset(&mut self) {}
+}
+
+pub trait GenericCongAvoidAlg {
+    type Flow: GenericCongAvoidFlow;
+
+    fn name() -> &'static str;
+    fn args<'a, 'b>() -> Vec<clap::Arg<'a, 'b>> {
+        vec![]
+    }
+    fn with_args(matches: clap::ArgMatches) -> Self;
+    fn new_flow(&self, logger: Option<slog::Logger>, init_cwnd: u32, mss: u32) -> Self::Flow;
+}
+
+pub struct Alg<A: GenericCongAvoidAlg> {
     pub deficit_timeout: u32,
-    pub inner_cfg: T::Config,
+    pub init_cwnd: u32,
+    pub report_option: GenericCongAvoidConfigReport,
+    pub ss: GenericCongAvoidConfigSS,
+    pub ss_thresh: u32,
+    pub use_compensation: bool,
+    pub logger: Option<slog::Logger>,
+    pub alg: A,
 }
 
-impl<T: GenericCongAvoidAlg> Clone for GenericCongAvoidConfig<T> {
-	fn clone(&self) -> Self {
-        GenericCongAvoidConfig {
-            ss_thresh: self.ss_thresh,
-            init_cwnd: self.init_cwnd,
-            report: self.report,
-            ss: self.ss,
-            use_compensation: self.use_compensation,
-            deficit_timeout: self.deficit_timeout,
-            inner_cfg: self.inner_cfg.clone(),
-        }
-	}
-}
+impl<T: Ipc, A: GenericCongAvoidAlg> CongAlg<T> for Alg<A> {
+    type Flow = Flow<T, A::Flow>;
 
-impl<T: GenericCongAvoidAlg> Default for GenericCongAvoidConfig<T> {
-    fn default() -> Self {
-        GenericCongAvoidConfig {
-            ss_thresh: DEFAULT_SS_THRESH,
-            init_cwnd: 0,
-            report: GenericCongAvoidConfigReport::Rtt,
-            ss: GenericCongAvoidConfigSS::Ccp,
-            use_compensation: false,
-            deficit_timeout: 0,
-            inner_cfg: Default::default(),
-        }
-    }
-}
-
-pub struct GenericCongAvoidMeasurements {
-    pub acked:       u32,
-    pub was_timeout: bool,
-    pub sacked:      u32,
-    pub loss:        u32,
-    pub rtt:         u32,
-    pub inflight:    u32,
-}
-
-impl<T: Ipc, A: GenericCongAvoidAlg> GenericCongAvoid<T, A> {
-    /// Make no updates in the datapath, and send a report after an interval
-    fn install_datapath_interval(&mut self, interval: time::Duration) -> Scope {
-        self.control_channel.set_program(
-            String::from("DatapathIntervalProg"), Some(&[("reportTime", interval.num_microseconds().unwrap() as u32)][..])
-        ).unwrap()
-    }
-
-    /// Make no updates in the datapath, and send a report after each RTT
-    fn install_datapath_interval_rtt(&mut self) -> Scope {
-        self.control_channel.set_program(
-            String::from("DatapathIntervalRTTProg"), None
-        ).unwrap()
-    }
-
-    /// Make no updates in the datapath, but send a report on every ack.
-    fn install_ack_update(&mut self) -> Scope {
-        self.control_channel.set_program(
-            String::from("AckUpdateProg"), None
-        ).unwrap()
-    }
-
-    /// Don't update acked, since those acks are already accounted for in slow start.
-    /// Send a report once there is a drop or timeout.
-    fn install_ss_update(&mut self) -> Scope {
-        self.control_channel.set_program(
-            String::from("SSUpdateProg"), None
-        ).unwrap()
-    }
-
-    fn update_cwnd(&self) {
-        if let Err(e) = self.control_channel
-            .update_field(&self.sc, &[("Cwnd", self.alg.curr_cwnd())]) 
-        {
-            self.logger.as_ref().map(|log| {
-                warn!(log, "Cwnd update error";
-                      "err" => ?e,
-                );
-            });
-        }
-    }
-
-    fn get_fields(&mut self, m: &Report) -> GenericCongAvoidMeasurements {
-        let sc = &self.sc;
-        let ack = m.get_field(&String::from("Report.acked"), sc).expect(
-            "expected acked field in returned measurement",
-        ) as u32;
-
-        let sack = m.get_field(&String::from("Report.sacked"), sc).expect(
-            "expected sacked field in returned measurement",
-        ) as u32;
-
-        let was_timeout = m.get_field(&String::from("Report.timeout"), sc).expect(
-            "expected timeout field in returned measurement",
-        ) as u32;
-
-        let inflight = m.get_field(&String::from("Report.inflight"), sc).expect(
-            "expected inflight field in returned measurement",
-        ) as u32;
-
-        let loss = m.get_field(&String::from("Report.loss"), sc).expect(
-            "expected loss field in returned measurement",
-        ) as u32;
-
-        let rtt = m.get_field(&String::from("Report.rtt"), sc).expect(
-            "expected rtt field in returned measurement",
-        ) as u32;
-
-        GenericCongAvoidMeasurements{
-            acked: ack,
-            was_timeout: was_timeout == 1,
-            sacked: sack,
-            loss,
-            rtt,
-            inflight,
-        }
-    }
-
-    fn handle_timeout(&mut self) {
-        self.ss_thresh /= 2;
-        if self.ss_thresh < self.init_cwnd {
-            self.ss_thresh = self.init_cwnd;
-        }
-
-        self.alg.reset();
-        self.alg.set_cwnd(self.init_cwnd);
-        self.curr_cwnd_reduction = 0;
-
-        self.logger.as_ref().map(|log| {
-            warn!(log, "timeout"; 
-                "curr_cwnd (pkts)" => self.init_cwnd / self.mss, 
-                "ssthresh" => self.ss_thresh,
-            );
-        });
-        
-        self.update_cwnd();
-        return;
-    }
-
-    fn maybe_reduce_cwnd(&mut self, m: &GenericCongAvoidMeasurements) {
-        if m.loss > 0 || m.sacked > 0 {
-            if self.deficit_timeout > 0 &&
-                ((time::now().to_timespec() - self.last_cwnd_reduction) >
-                    time::Duration::microseconds((f64::from(self.rtt) * self.deficit_timeout as f64) as i64)
-                ) {
-                self.curr_cwnd_reduction = 0;
-            }
-
-            // if loss indicator is nonzero
-            // AND the losses in the lossy cwnd have not yet been accounted for
-            // OR there is a partial ACK AND cwnd was probing ss_thresh
-            if m.loss > 0 && self.curr_cwnd_reduction == 0 || (m.acked > 0 && self.alg.curr_cwnd() == self.ss_thresh) {
-                self.alg.reduction(m);
-                self.last_cwnd_reduction = time::now().to_timespec();
-                self.ss_thresh = self.alg.curr_cwnd();
-                self.update_cwnd();
-            }
-
-            self.curr_cwnd_reduction += m.sacked + m.loss;
-        } else if m.acked < self.curr_cwnd_reduction {
-            self.curr_cwnd_reduction -= (m.acked as f32 / self.mss as f32) as u32;
-        } else {
-            self.curr_cwnd_reduction = 0;
-        }
-    }
-
-    fn slow_start_increase(&mut self, acked: u32) -> u32 {
-        let mut new_bytes_acked = acked;
-        if self.alg.curr_cwnd() < self.ss_thresh {
-            // increase cwnd by 1 per packet, until ssthresh
-            if self.alg.curr_cwnd() + new_bytes_acked > self.ss_thresh {
-                new_bytes_acked -= self.ss_thresh - self.alg.curr_cwnd();
-                self.alg.set_cwnd(self.ss_thresh);
-            } else {
-                let curr_cwnd = self.alg.curr_cwnd();
-                if self.use_compensation {
-                    // use a compensating increase function: deliberately overshoot
-                    // the "correct" update to keep account for lost throughput due to
-                    // infrequent updates. Usually this doesn't matter, but it can when 
-                    // the window is increasing exponentially (slow start).
-                    let delta = f64::from(new_bytes_acked) / (2.0_f64).ln();
-                    self.alg.set_cwnd(curr_cwnd + delta as u32);
-                    // let ccp_rtt = (rtt_us + 10_000) as f64;
-                    // let delta = ccp_rtt * ccp_rtt / (rtt_us as f64 * rtt_us as f64);
-                    // self.cwnd += (new_bytes_acked as f64 * delta) as u32;
-                } else {        
-                    self.alg.set_cwnd(curr_cwnd + new_bytes_acked);
-                }
-
-                new_bytes_acked = 0
-            }
-        }
-
-        new_bytes_acked
-    }
-}
-
-impl<T: Ipc, A: GenericCongAvoidAlg> CongAlg<T> for GenericCongAvoid<T, A> {
-    type Config = GenericCongAvoidConfig<A>;
-
-    fn name() -> String {
+    fn name() -> &'static str {
         A::name()
     }
 
-    fn init_programs(_cfg: Config<T, Self>) -> Vec<(String, String)> {
-        vec![
-            (String::from("DatapathIntervalProg"), String::from("
+    fn datapath_programs(&self) -> HashMap<&'static str, String> {
+        let mut h = HashMap::default();
+        h.insert(
+            "DatapathIntervalProg",
+            "
                 (def
                 (Report
                     (volatile acked 0)
@@ -301,8 +110,13 @@ impl<T: Ipc, A: GenericCongAvoidAlg> CongAlg<T> for GenericCongAvoid<T, A> {
                     (report)
                     (:= Micros 0)
                 )
-            ")),
-            (String::from("DatapathIntervalRTTProg"), String::from("
+            "
+            .to_string(),
+        );
+
+        h.insert(
+            "DatapathIntervalRTTProg",
+            "
                 (def (Report
                     (volatile acked 0)
                     (volatile sacked 0) 
@@ -328,8 +142,13 @@ impl<T: Ipc, A: GenericCongAvoidAlg> CongAlg<T> for GenericCongAvoid<T, A> {
                     (report)
                     (:= Micros 0)
                 )
-            ")),
-            (String::from("AckUpdateProg"), String::from("
+            "
+            .to_string(),
+        );
+
+        h.insert(
+            "AckUpdateProg",
+            "
                 (def (Report
                     (volatile acked 0)
                     (volatile sacked 0)
@@ -347,8 +166,13 @@ impl<T: Ipc, A: GenericCongAvoidAlg> CongAlg<T> for GenericCongAvoid<T, A> {
                     (:= Report.inflight Flow.packets_in_flight)
                     (report)
                 )
-            ")),
-            (String::from("SSUpdateProg"), String::from("
+            "
+            .to_string(),
+        );
+
+        h.insert(
+            "SSUpdateProg",
+            "
                 (def (Report
                     (volatile acked 0)
                     (volatile sacked 0)
@@ -371,34 +195,38 @@ impl<T: Ipc, A: GenericCongAvoidAlg> CongAlg<T> for GenericCongAvoid<T, A> {
                     (report)
                 )
 
-            "))]
+            "
+            .to_string(),
+        );
+
+        h
     }
 
-    fn create(control: Datapath<T>, cfg: Config<T, GenericCongAvoid<T, A>>, info: DatapathInfo) -> Self {
-        let init_cwnd = if cfg.config.init_cwnd != 0 {
-            cfg.config.init_cwnd
+    fn new_flow(&self, control: Datapath<T>, info: DatapathInfo) -> Self::Flow {
+        let init_cwnd = if self.init_cwnd != 0 {
+            self.init_cwnd
         } else {
             info.init_cwnd
         };
 
-        let mut s = Self {
+        let mut s = Flow {
             control_channel: control,
-            logger: cfg.logger.clone(),
-            report_option: cfg.config.report,
+            logger: self.logger.clone(),
+            report_option: self.report_option,
             sc: Default::default(),
-            ss_thresh: cfg.config.ss_thresh,
+            ss_thresh: self.ss_thresh,
             rtt: 0,
             in_startup: false,
             mss: info.mss,
-		    use_compensation: cfg.config.use_compensation,
-            deficit_timeout: cfg.config.deficit_timeout,
+            use_compensation: self.use_compensation,
+            deficit_timeout: self.deficit_timeout,
             init_cwnd,
             curr_cwnd_reduction: 0,
             last_cwnd_reduction: time::now().to_timespec() - time::Duration::milliseconds(500),
-            alg: A::new(cfg.config.inner_cfg, cfg.logger, init_cwnd, info.mss),
+            alg: self.alg.new_flow(self.logger.clone(), init_cwnd, info.mss),
         };
 
-        match (cfg.config.ss, cfg.config.report) {
+        match (self.ss, self.report_option) {
             (GenericCongAvoidConfigSS::Datapath, _) => {
                 s.sc = s.install_ss_update();
                 s.in_startup = true;
@@ -416,7 +244,28 @@ impl<T: Ipc, A: GenericCongAvoidAlg> CongAlg<T> for GenericCongAvoid<T, A> {
 
         s
     }
+}
 
+pub struct Flow<T: Ipc, A: GenericCongAvoidFlow> {
+    alg: A,
+    deficit_timeout: u32,
+    init_cwnd: u32,
+    report_option: GenericCongAvoidConfigReport,
+    ss_thresh: u32,
+    use_compensation: bool,
+    control_channel: Datapath<T>,
+    logger: Option<slog::Logger>,
+
+    curr_cwnd_reduction: u32,
+    last_cwnd_reduction: time::Timespec,
+
+    in_startup: bool,
+    mss: u32,
+    rtt: u32,
+    sc: Scope,
+}
+
+impl<I: Ipc, A: GenericCongAvoidFlow> portus::Flow for Flow<I, A> {
     fn on_report(&mut self, _sock_id: u32, m: Report) {
         let mut ms = self.get_fields(&m);
 
@@ -468,5 +317,169 @@ impl<T: Ipc, A: GenericCongAvoidAlg> CongAlg<T> for GenericCongAvoid<T, A> {
                 "rtt" => ms.rtt,
             );
         });
+    }
+}
+
+impl<T: Ipc, A: GenericCongAvoidFlow> Flow<T, A> {
+    /// Make no updates in the datapath, and send a report after an interval
+    fn install_datapath_interval(&mut self, interval: time::Duration) -> Scope {
+        self.control_channel
+            .set_program(
+                "DatapathIntervalProg",
+                Some(&[("reportTime", interval.num_microseconds().unwrap() as u32)][..]),
+            )
+            .unwrap()
+    }
+
+    /// Make no updates in the datapath, and send a report after each RTT
+    fn install_datapath_interval_rtt(&mut self) -> Scope {
+        self.control_channel
+            .set_program("DatapathIntervalRTTProg", None)
+            .unwrap()
+    }
+
+    /// Make no updates in the datapath, but send a report on every ack.
+    fn install_ack_update(&mut self) -> Scope {
+        self.control_channel
+            .set_program("AckUpdateProg", None)
+            .unwrap()
+    }
+
+    /// Don't update acked, since those acks are already accounted for in slow start.
+    /// Send a report once there is a drop or timeout.
+    fn install_ss_update(&mut self) -> Scope {
+        self.control_channel
+            .set_program("SSUpdateProg", None)
+            .unwrap()
+    }
+
+    fn update_cwnd(&self) {
+        if let Err(e) = self
+            .control_channel
+            .update_field(&self.sc, &[("Cwnd", self.alg.curr_cwnd())])
+        {
+            self.logger.as_ref().map(|log| {
+                warn!(log, "Cwnd update error";
+                      "err" => ?e,
+                );
+            });
+        }
+    }
+
+    fn get_fields(&mut self, m: &Report) -> GenericCongAvoidMeasurements {
+        let sc = &self.sc;
+        let ack = m
+            .get_field(&String::from("Report.acked"), sc)
+            .expect("expected acked field in returned measurement") as u32;
+
+        let sack = m
+            .get_field(&String::from("Report.sacked"), sc)
+            .expect("expected sacked field in returned measurement") as u32;
+
+        let was_timeout =
+            m.get_field(&String::from("Report.timeout"), sc)
+                .expect("expected timeout field in returned measurement") as u32;
+
+        let inflight =
+            m.get_field(&String::from("Report.inflight"), sc)
+                .expect("expected inflight field in returned measurement") as u32;
+
+        let loss = m
+            .get_field(&String::from("Report.loss"), sc)
+            .expect("expected loss field in returned measurement") as u32;
+
+        let rtt = m
+            .get_field(&String::from("Report.rtt"), sc)
+            .expect("expected rtt field in returned measurement") as u32;
+
+        GenericCongAvoidMeasurements {
+            acked: ack,
+            was_timeout: was_timeout == 1,
+            sacked: sack,
+            loss,
+            rtt,
+            inflight,
+        }
+    }
+
+    fn handle_timeout(&mut self) {
+        self.ss_thresh /= 2;
+        if self.ss_thresh < self.init_cwnd {
+            self.ss_thresh = self.init_cwnd;
+        }
+
+        self.alg.reset();
+        self.alg.set_cwnd(self.init_cwnd);
+        self.curr_cwnd_reduction = 0;
+
+        self.logger.as_ref().map(|log| {
+            warn!(log, "timeout"; 
+                "curr_cwnd (pkts)" => self.init_cwnd / self.mss, 
+                "ssthresh" => self.ss_thresh,
+            );
+        });
+
+        self.update_cwnd();
+        return;
+    }
+
+    fn maybe_reduce_cwnd(&mut self, m: &GenericCongAvoidMeasurements) {
+        if m.loss > 0 || m.sacked > 0 {
+            if self.deficit_timeout > 0
+                && ((time::now().to_timespec() - self.last_cwnd_reduction)
+                    > time::Duration::microseconds(
+                        (f64::from(self.rtt) * self.deficit_timeout as f64) as i64,
+                    )) {
+                self.curr_cwnd_reduction = 0;
+            }
+
+            // if loss indicator is nonzero
+            // AND the losses in the lossy cwnd have not yet been accounted for
+            // OR there is a partial ACK AND cwnd was probing ss_thresh
+            if m.loss > 0 && self.curr_cwnd_reduction == 0
+                || (m.acked > 0 && self.alg.curr_cwnd() == self.ss_thresh)
+            {
+                self.alg.reduction(m);
+                self.last_cwnd_reduction = time::now().to_timespec();
+                self.ss_thresh = self.alg.curr_cwnd();
+                self.update_cwnd();
+            }
+
+            self.curr_cwnd_reduction += m.sacked + m.loss;
+        } else if m.acked < self.curr_cwnd_reduction {
+            self.curr_cwnd_reduction -= (m.acked as f32 / self.mss as f32) as u32;
+        } else {
+            self.curr_cwnd_reduction = 0;
+        }
+    }
+
+    fn slow_start_increase(&mut self, acked: u32) -> u32 {
+        let mut new_bytes_acked = acked;
+        if self.alg.curr_cwnd() < self.ss_thresh {
+            // increase cwnd by 1 per packet, until ssthresh
+            if self.alg.curr_cwnd() + new_bytes_acked > self.ss_thresh {
+                new_bytes_acked -= self.ss_thresh - self.alg.curr_cwnd();
+                self.alg.set_cwnd(self.ss_thresh);
+            } else {
+                let curr_cwnd = self.alg.curr_cwnd();
+                if self.use_compensation {
+                    // use a compensating increase function: deliberately overshoot
+                    // the "correct" update to keep account for lost throughput due to
+                    // infrequent updates. Usually this doesn't matter, but it can when
+                    // the window is increasing exponentially (slow start).
+                    let delta = f64::from(new_bytes_acked) / (2.0_f64).ln();
+                    self.alg.set_cwnd(curr_cwnd + delta as u32);
+                // let ccp_rtt = (rtt_us + 10_000) as f64;
+                // let delta = ccp_rtt * ccp_rtt / (rtt_us as f64 * rtt_us as f64);
+                // self.cwnd += (new_bytes_acked as f64 * delta) as u32;
+                } else {
+                    self.alg.set_cwnd(curr_cwnd + new_bytes_acked);
+                }
+
+                new_bytes_acked = 0
+            }
+        }
+
+        new_bytes_acked
     }
 }
