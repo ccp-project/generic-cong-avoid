@@ -1,3 +1,14 @@
+//! Generic Cong Avoid is a higher-level API for [portus](https://crates.io/crates/portus)
+//! which is suitable for traditional "congestion avoidance" algorithms.
+//!
+//! These algorithms comprise of an increase rule when new cumulative acknowledgements
+//! arrive, and a decrease rule when congestion is detected. This crate provides implementations
+//! of Reno and Cubic.
+//!
+//! The API retains the same structure as that of portus, but it is not necessary (nor possible)
+//! to write custom datapath programs: the generic-cong-avoid layer collects a fixed set of measurements
+//! detailed in [`GenericCongAvoidMeasurements`](./struct.GenericCongAvoidMeasurements.html).
+
 extern crate clap;
 extern crate time;
 #[macro_use]
@@ -17,6 +28,7 @@ pub use bin_helper::{make_args, start};
 
 pub const DEFAULT_SS_THRESH: u32 = 0x7fff_ffff;
 
+/// The fixed list of measurements available to generic-cong-avoid algorithms
 pub struct GenericCongAvoidMeasurements {
     pub acked: u32,
     pub was_timeout: bool,
@@ -26,6 +38,7 @@ pub struct GenericCongAvoidMeasurements {
     pub inflight: u32,
 }
 
+/// Configuration option: how often reports should be collected?
 #[derive(Debug, Clone, Copy)]
 pub enum GenericCongAvoidConfigReport {
     Ack,
@@ -33,12 +46,14 @@ pub enum GenericCongAvoidConfigReport {
     Interval(time::Duration),
 }
 
+/// Configuration option: which implementation of slow start?
 #[derive(Debug, Clone, Copy)]
 pub enum GenericCongAvoidConfigSS {
     Datapath,
     Ccp,
 }
 
+/// An individual generic-cong-avoid flow
 pub trait GenericCongAvoidFlow {
     fn curr_cwnd(&self) -> u32;
     fn set_cwnd(&mut self, cwnd: u32);
@@ -47,6 +62,8 @@ pub trait GenericCongAvoidFlow {
     fn reset(&mut self) {}
 }
 
+/// An generic-cong-avoid algorithm, which contains a configuration
+/// and can instantiate new flows.
 pub trait GenericCongAvoidAlg {
     type Flow: GenericCongAvoidFlow;
 
@@ -58,6 +75,7 @@ pub trait GenericCongAvoidAlg {
     fn new_flow(&self, logger: Option<slog::Logger>, init_cwnd: u32, mss: u32) -> Self::Flow;
 }
 
+/// The generic-cong-avoid type which implements `portus::CongAlg`.
 pub struct Alg<A: GenericCongAvoidAlg> {
     pub deficit_timeout: u32,
     pub init_cwnd: u32,
@@ -245,6 +263,7 @@ impl<T: Ipc, A: GenericCongAvoidAlg> CongAlg<T> for Alg<A> {
     }
 }
 
+/// The generic-cong-avoid type which implements `portus::Flow`.
 pub struct Flow<T: Ipc, A: GenericCongAvoidFlow> {
     alg: A,
     deficit_timeout: u32,

@@ -6,8 +6,8 @@ use slog;
 use std;
 use time;
 use {
-    Alg, GenericCongAvoidAlg, GenericCongAvoidConfigReport,
-    GenericCongAvoidConfigSS, DEFAULT_SS_THRESH,
+    Alg, GenericCongAvoidAlg, GenericCongAvoidConfigReport, GenericCongAvoidConfigSS,
+    DEFAULT_SS_THRESH,
 };
 
 pub fn make_args<A: GenericCongAvoidAlg>(
@@ -89,6 +89,7 @@ pub fn make_args<A: GenericCongAvoidAlg>(
     ))
 }
 
+/// Wrapper around `portus::run` specific to types implementing `GenericCongAvoidAlg`.
 pub fn start<A: GenericCongAvoidAlg>(ipc: &str, log: slog::Logger, alg: Alg<A>)
 where
     A: 'static,
@@ -99,14 +100,7 @@ where
             let b = Socket::<Blocking>::new("in", "out")
                 .map(|sk| BackendBuilder { sock: sk })
                 .expect("ipc initialization");
-            portus::run::<_, Alg<A>>(
-                b,
-                portus::Config {
-                    logger: Some(log),
-                },
-                alg,
-            )
-            .unwrap();
+            portus::run::<_, Alg<A>>(b, portus::Config { logger: Some(log) }, alg).unwrap();
         }
         #[cfg(all(target_os = "linux"))]
         "netlink" => {
@@ -114,14 +108,7 @@ where
             let b = Socket::<Blocking>::new()
                 .map(|sk| BackendBuilder { sock: sk })
                 .expect("ipc initialization");
-            portus::run::<_, Alg<A>>(
-                b,
-                portus::Config {
-                    logger: Some(log),
-                },
-                alg
-            )
-            .unwrap();
+            portus::run::<_, Alg<A>>(b, portus::Config { logger: Some(log) }, alg).unwrap();
         }
         #[cfg(all(target_os = "linux"))]
         "char" => {
@@ -129,14 +116,7 @@ where
             let b = Socket::<Blocking>::new()
                 .map(|sk| BackendBuilder { sock: sk })
                 .expect("char initialization");
-            portus::run::<_, Alg<A>>(
-                b,
-                portus::Config {
-                    logger: Some(log),
-                },
-                alg
-            )
-            .unwrap()
+            portus::run::<_, Alg<A>>(b, portus::Config { logger: Some(log) }, alg).unwrap()
         }
         _ => unreachable!(),
     }
