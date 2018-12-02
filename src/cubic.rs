@@ -1,5 +1,5 @@
-extern crate time;
 extern crate slog;
+extern crate time;
 
 use GenericCongAvoidAlg;
 use GenericCongAvoidFlow;
@@ -90,7 +90,7 @@ impl GenericCongAvoidAlg for Cubic {
     fn name() -> &'static str {
         "cubic"
     }
-    
+
     fn with_args(_: clap::ArgMatches) -> Self {
         Default::default()
     }

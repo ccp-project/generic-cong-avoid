@@ -15,7 +15,7 @@ fn main() {
         .map_err(|e| warn!(log, "bad argument"; "err" => ?e))
         .unwrap();
 
-    info!(log, "starting CCP"; 
+    info!(log, "starting CCP";
         "algorithm" => "Cubic",
         "ipc" => ipc.clone(),
         "reports" => ?alg.report_option,
