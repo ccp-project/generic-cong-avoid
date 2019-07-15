@@ -11,7 +11,7 @@ use generic_cong_avoid::cubic::Cubic;
 
 fn main() {
     let log = portus::algs::make_logger();
-    let (alg, ipc) = generic_cong_avoid::make_args("CCP Cubic", log.clone())
+    let (alg, ipc, nsocks) = generic_cong_avoid::make_args("CCP Cubic", log.clone())
         .map_err(|e| warn!(log, "bad argument"; "err" => ?e))
         .unwrap();
 
@@ -20,5 +20,5 @@ fn main() {
         "slow_start_mode" => ?alg.ss,
     );
 
-    generic_cong_avoid::start::<Cubic>(ipc.as_str(), log, alg);
+    generic_cong_avoid::start::<Cubic>(ipc.as_str(), log, alg, nsocks);
 }

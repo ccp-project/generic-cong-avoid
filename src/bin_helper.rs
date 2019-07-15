@@ -1,19 +1,18 @@
 use clap;
 use clap::Arg;
 use portus;
-use portus::ipc::{BackendBuilder, Blocking};
 use slog;
 use std;
 use time;
 use {
-    Alg, GenericCongAvoidAlg, GenericCongAvoidConfigReport,
-    GenericCongAvoidConfigSS, DEFAULT_SS_THRESH,
+    Alg, GenericCongAvoidAlg, GenericCongAvoidConfigReport, GenericCongAvoidConfigSS,
+    DEFAULT_SS_THRESH,
 };
 
 pub fn make_args<A: GenericCongAvoidAlg>(
     name: &str,
     logger: impl Into<Option<slog::Logger>>,
-) -> Result<(Alg<A>, String), std::num::ParseIntError> {
+) -> Result<(Alg<A>, String, u32), std::num::ParseIntError> {
     let ss_thresh_default = format!("{}", DEFAULT_SS_THRESH);
     let matches = clap::App::new(name)
         .version("0.2.0")
@@ -24,6 +23,10 @@ pub fn make_args<A: GenericCongAvoidAlg>(
              .help("Sets the type of ipc to use: (netlink|unix)")
              .default_value("unix")
              .validator(portus::algs::ipc_valid))
+        .arg(Arg::with_name("nsocks")
+            .long("nsocks")
+            .help("Number of sockets to expose")
+            .default_value("0"))
         .arg(Arg::with_name("init_cwnd")
              .long("init_cwnd")
              .help("Sets the initial congestion window, in bytes. Setting 0 will use datapath default.")
@@ -57,6 +60,7 @@ pub fn make_args<A: GenericCongAvoidAlg>(
         .get_matches();
 
     let ipc = String::from(matches.value_of("ipc").unwrap());
+    let nsocks = u32::from_str_radix(matches.value_of("nsocks").unwrap(), 10)?;
 
     Ok((
         Alg {
@@ -86,58 +90,17 @@ pub fn make_args<A: GenericCongAvoidAlg>(
             alg: A::with_args(matches),
         },
         ipc,
+        nsocks,
     ))
 }
 
-pub fn start<A: GenericCongAvoidAlg>(ipc: &str, log: slog::Logger, alg: Alg<A>)
+pub fn start<A: GenericCongAvoidAlg>(ipc: &str, log: slog::Logger, alg: Alg<A>, nsocks: u32)
 where
     A: 'static,
 {
-    match ipc {
-        "unix" => {
-            use portus::ipc::unix::Socket;
-            let b = Socket::<Blocking>::new("in", "out")
-                .map(|sk| BackendBuilder { sock: sk })
-                .expect("ipc initialization");
-            portus::run::<_, Alg<A>>(
-                b,
-                portus::Config {
-                    logger: Some(log),
-                },
-                alg,
-            )
-            .unwrap();
-        }
-        #[cfg(all(target_os = "linux"))]
-        "netlink" => {
-            use portus::ipc::netlink::Socket;
-            let b = Socket::<Blocking>::new()
-                .map(|sk| BackendBuilder { sock: sk })
-                .expect("ipc initialization");
-            portus::run::<_, Alg<A>>(
-                b,
-                portus::Config {
-                    logger: Some(log),
-                },
-                alg
-            )
-            .unwrap();
-        }
-        #[cfg(all(target_os = "linux"))]
-        "char" => {
-            use portus::ipc::kp::Socket;
-            let b = Socket::<Blocking>::new()
-                .map(|sk| BackendBuilder { sock: sk })
-                .expect("char initialization");
-            portus::run::<_, Alg<A>>(
-                b,
-                portus::Config {
-                    logger: Some(log),
-                },
-                alg
-            )
-            .unwrap()
-        }
-        _ => unreachable!(),
+    if nsocks == 0 {
+        portus::start!(ipc, Some(log), alg, portus::ipc::Blocking).unwrap();
+    } else if nsocks > 0 {
+        portus::start!(ipc, Some(log), alg, portus::ipc::Blocking, nsocks).unwrap();
     }
 }
