@@ -4,10 +4,10 @@ extern crate time;
 extern crate slog;
 extern crate portus;
 
-use std::collections::HashMap;
 use portus::ipc::Ipc;
 use portus::lang::Scope;
 use portus::{CongAlg, Datapath, DatapathInfo, DatapathTrait, Report};
+use std::collections::HashMap;
 
 pub mod cubic;
 pub mod reno;
@@ -307,7 +307,7 @@ impl<I: Ipc, A: GenericCongAvoidFlow> portus::Flow for Flow<I, A> {
         self.update_cwnd();
 
         self.logger.as_ref().map(|log| {
-            debug!(log, "got ack"; 
+            debug!(log, "got ack";
                 "acked(pkts)" => ms.acked / self.mss,
                 "curr_cwnd (pkts)" => self.alg.curr_cwnd() / self.mss,
                 "inflight (pkts)" => ms.inflight,
@@ -412,8 +412,8 @@ impl<T: Ipc, A: GenericCongAvoidFlow> Flow<T, A> {
         self.curr_cwnd_reduction = 0;
 
         self.logger.as_ref().map(|log| {
-            warn!(log, "timeout"; 
-                "curr_cwnd (pkts)" => self.init_cwnd / self.mss, 
+            warn!(log, "timeout";
+                "curr_cwnd (pkts)" => self.init_cwnd / self.mss,
                 "ssthresh" => self.ss_thresh,
             );
         });
@@ -428,7 +428,8 @@ impl<T: Ipc, A: GenericCongAvoidFlow> Flow<T, A> {
                 && ((time::now().to_timespec() - self.last_cwnd_reduction)
                     > time::Duration::microseconds(
                         (f64::from(self.rtt) * self.deficit_timeout as f64) as i64,
-                    )) {
+                    ))
+            {
                 self.curr_cwnd_reduction = 0;
             }
 
