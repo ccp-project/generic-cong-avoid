@@ -10,7 +10,7 @@ license = "ISC"
 [dependencies]
 clap = "2.29"
 fnv = "1"
-portus = "0.5"
+portus = { git = "https://github.com/ccp-project/portus", branch = "multi_backend_clean" }
 slog = {version = "2"}
 slog-async = "2"
 slog-term = "2"
