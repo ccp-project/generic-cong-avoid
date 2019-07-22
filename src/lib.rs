@@ -1,11 +1,10 @@
 extern crate clap;
-extern crate fnv;
 extern crate time;
 #[macro_use]
 extern crate slog;
 extern crate portus;
 
-use fnv::FnvHashMap as HashMap;
+use std::collections::HashMap;
 use portus::ipc::Ipc;
 use portus::lang::Scope;
 use portus::{CongAlg, Datapath, DatapathInfo, DatapathTrait, Report};
