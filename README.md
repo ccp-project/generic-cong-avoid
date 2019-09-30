@@ -4,7 +4,7 @@ CCP Algorithm: Generic Congestion Avoidance
 This repository provides a higher-level API on top of CCP for the increase-decrease family of 
 congestion control algorithms. It also implements TCP Reno and TCP Cubic using this API. 
 
-To get started using this algorithm with CCP, please see our [guide](https://ccp-project.github.io/guide).
+To get started using this algorithm with CCP, please see our [guide](https://ccp-project.github.io/ccp-guide).
 
 
 ## Notes
