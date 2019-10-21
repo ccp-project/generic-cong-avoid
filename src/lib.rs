@@ -241,6 +241,14 @@ impl<T: Ipc, A: GenericCongAvoidAlg> CongAlg<T> for Alg<A> {
             }
         }
 
+        self.logger.as_ref().map(|log| {
+            debug!(log, "setting initial cwnd";
+                "curr_cwnd (bytes)" => s.alg.curr_cwnd(),
+                "mss" => s.mss,
+            );
+        });
+        s.update_cwnd();
+
         s
     }
 }
@@ -267,6 +275,16 @@ pub struct Flow<T: Ipc, A: GenericCongAvoidFlow> {
 impl<I: Ipc, A: GenericCongAvoidFlow> portus::Flow for Flow<I, A> {
     fn on_report(&mut self, _sock_id: u32, m: Report) {
         let mut ms = self.get_fields(&m);
+        self.logger.as_ref().map(|log| {
+            debug!(log, "got ack";
+                "acked(pkts)" => ms.acked / self.mss,
+                "curr_cwnd (pkts)" => self.alg.curr_cwnd() / self.mss,
+                "inflight (pkts)" => ms.inflight,
+                "loss" => ms.loss,
+                "ssthresh" => self.ss_thresh,
+                "rtt" => ms.rtt,
+            );
+        });
 
         if self.in_startup {
             // install new fold
@@ -299,23 +317,13 @@ impl<I: Ipc, A: GenericCongAvoidFlow> portus::Flow for Flow<I, A> {
         self.maybe_reduce_cwnd(&ms);
         if self.curr_cwnd_reduction > 0 {
             self.logger.as_ref().map(|log| {
-                debug!(log, "in cwnd reduction"; "acked" => ms.acked / self.mss, "deficit" => self.curr_cwnd_reduction);
+                debug!(log, "in cwnd reduction"; "cwnd" => self.alg.curr_cwnd() / self.mss, "acked" => ms.acked / self.mss, "deficit" => self.curr_cwnd_reduction);
             });
             return;
         }
 
         self.update_cwnd();
 
-        self.logger.as_ref().map(|log| {
-            debug!(log, "got ack";
-                "acked(pkts)" => ms.acked / self.mss,
-                "curr_cwnd (pkts)" => self.alg.curr_cwnd() / self.mss,
-                "inflight (pkts)" => ms.inflight,
-                "loss" => ms.loss,
-                "ssthresh" => self.ss_thresh,
-                "rtt" => ms.rtt,
-            );
-        });
     }
 }
 
