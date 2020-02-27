@@ -93,7 +93,7 @@ impl<T: Ipc, A: GenericCongAvoidAlg> CongAlg<T> for Alg<A> {
                 (reportTime 0)
                 )
                 (when true
-                    (:= Report.inflight Flow.packets_in_flight)
+                    (:= Report.inflight Flow.bytes_in_flight)
                     (:= Report.rtt Flow.rtt_sample_us)
                     (:= Report.acked (+ Report.acked Ack.bytes_acked))
                     (:= Report.sacked (+ Report.sacked Ack.packets_misordered))
@@ -125,7 +125,7 @@ impl<T: Ipc, A: GenericCongAvoidAlg> CongAlg<T> for Alg<A> {
                     (volatile inflight 0)
                 ))
                 (when true
-                    (:= Report.inflight Flow.packets_in_flight)
+                    (:= Report.inflight Flow.bytes_in_flight)
                     (:= Report.rtt Flow.rtt_sample_us)
                     (:= Report.acked (+ Report.acked Ack.bytes_acked))
                     (:= Report.sacked (+ Report.sacked Ack.packets_misordered))
@@ -162,7 +162,7 @@ impl<T: Ipc, A: GenericCongAvoidAlg> CongAlg<T> for Alg<A> {
                     (:= Report.loss Ack.lost_pkts_sample)
                     (:= Report.timeout Flow.was_timeout)
                     (:= Report.rtt Flow.rtt_sample_us)
-                    (:= Report.inflight Flow.packets_in_flight)
+                    (:= Report.inflight Flow.bytes_in_flight)
                     (report)
                 )
             "
@@ -186,7 +186,7 @@ impl<T: Ipc, A: GenericCongAvoidAlg> CongAlg<T> for Alg<A> {
                     (:= Report.loss Ack.lost_pkts_sample)
                     (:= Report.timeout Flow.was_timeout)
                     (:= Report.rtt Flow.rtt_sample_us)
-                    (:= Report.inflight Flow.packets_in_flight)
+                    (:= Report.inflight Flow.bytes_in_flight)
                     (:= Cwnd (+ Cwnd Ack.bytes_acked))
                     (fallthrough)
                 )
@@ -279,7 +279,7 @@ impl<I: Ipc, A: GenericCongAvoidFlow> portus::Flow for Flow<I, A> {
             debug!(log, "got ack";
                 "acked(pkts)" => ms.acked / self.mss,
                 "curr_cwnd (pkts)" => self.alg.curr_cwnd() / self.mss,
-                "inflight (pkts)" => ms.inflight,
+                "inflight (pkts)" => ms.inflight / self.mss,
                 "loss" => ms.loss,
                 "ssthresh" => self.ss_thresh,
                 "rtt" => ms.rtt,
@@ -300,7 +300,7 @@ impl<I: Ipc, A: GenericCongAvoidFlow> portus::Flow for Flow<I, A> {
                 }
             }
 
-            self.alg.set_cwnd(ms.inflight * self.mss);
+            self.alg.set_cwnd(ms.inflight);// * self.mss);
             self.in_startup = false;
         }
 
@@ -317,7 +317,10 @@ impl<I: Ipc, A: GenericCongAvoidFlow> portus::Flow for Flow<I, A> {
         self.maybe_reduce_cwnd(&ms);
         if self.curr_cwnd_reduction > 0 {
             self.logger.as_ref().map(|log| {
-                debug!(log, "in cwnd reduction"; "cwnd" => self.alg.curr_cwnd() / self.mss, "acked" => ms.acked / self.mss, "deficit" => self.curr_cwnd_reduction);
+                debug!(log, "cwnd re";
+                       "cwnd" => self.alg.curr_cwnd() / self.mss,
+                       "acked" => ms.acked / self.mss, 
+                       "deficit" => self.curr_cwnd_reduction);
             });
             return;
         }
