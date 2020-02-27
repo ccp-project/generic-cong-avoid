@@ -42,7 +42,7 @@ impl GenericCongAvoidFlow for Reno {
 
     fn increase(&mut self, m: &GenericCongAvoidMeasurements) {
         // increase cwnd by 1 / cwnd per packet
-        self.cwnd += f64::from(self.mss) * (f64::from(m.acked) / self.cwnd);
+        self.cwnd += 3.0 * f64::from(self.mss) * (f64::from(m.acked) / self.cwnd);
     }
 
     fn reduction(&mut self, _m: &GenericCongAvoidMeasurements) {

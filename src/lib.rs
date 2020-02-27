@@ -434,6 +434,7 @@ impl<T: Ipc, A: GenericCongAvoidFlow> Flow<T, A> {
     }
 
     fn maybe_reduce_cwnd(&mut self, m: &GenericCongAvoidMeasurements) {
+        let old_deficit = self.curr_cwnd_reduction;
         if m.loss > 0 || m.sacked > 0 {
             if self.deficit_timeout > 0
                 && ((time::now().to_timespec() - self.last_cwnd_reduction)
@@ -448,8 +449,18 @@ impl<T: Ipc, A: GenericCongAvoidFlow> Flow<T, A> {
             // AND the losses in the lossy cwnd have not yet been accounted for
             // OR there is a partial ACK AND cwnd was probing ss_thresh
             if m.loss > 0 && self.curr_cwnd_reduction == 0
-                || (m.acked > 0 && self.alg.curr_cwnd() == self.ss_thresh)
+               //|| (m.acked > 0 && self.alg.curr_cwnd() == self.ss_thresh)
             {
+                self.logger.as_ref().map(|log| {
+                    warn!(log, "reduction";
+                           "loss" => m.loss,
+                           "deficit" => self.curr_cwnd_reduction,
+                           "sacked" => m.sacked,
+                           "acked" => m.acked,
+                           "cwnd" => self.alg.curr_cwnd(),
+                           "ssthresh" => self.ss_thresh,
+                    );
+                });
                 self.alg.reduction(m);
                 self.last_cwnd_reduction = time::now().to_timespec();
                 self.ss_thresh = self.alg.curr_cwnd();
@@ -461,6 +472,14 @@ impl<T: Ipc, A: GenericCongAvoidFlow> Flow<T, A> {
             self.curr_cwnd_reduction -= (m.acked as f32 / self.mss as f32) as u32;
         } else {
             self.curr_cwnd_reduction = 0;
+        }
+        if old_deficit > 0 || self.curr_cwnd_reduction > 0 {
+            self.logger.as_ref().map(|log| {
+                warn!(log, "deficit";
+                       "old" => old_deficit,
+                       "new" => self.curr_cwnd_reduction,
+                );
+            });
         }
     }
 
