@@ -273,7 +273,7 @@ pub struct Flow<T: Ipc, A: GenericCongAvoidFlow> {
 }
 
 impl<I: Ipc, A: GenericCongAvoidFlow> portus::Flow for Flow<I, A> {
-    fn on_report(&mut self, _sock_id: u32, m: Report) {
+    fn on_report(&mut self, sock_id: u32, m: Report) {
         let mut ms = self.get_fields(&m);
         self.logger.as_ref().map(|log| {
             debug!(log, "got ack";
@@ -283,6 +283,7 @@ impl<I: Ipc, A: GenericCongAvoidFlow> portus::Flow for Flow<I, A> {
                 "loss" => ms.loss,
                 "ssthresh" => self.ss_thresh,
                 "rtt" => ms.rtt,
+                "sid" => sock_id,
             );
         });
 
