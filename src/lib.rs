@@ -1,12 +1,12 @@
-extern crate clap;
 extern crate time;
 #[macro_use]
 extern crate slog;
 extern crate portus;
+extern crate clap;
 
 use portus::ipc::Ipc;
 use portus::lang::Scope;
-use portus::{CongAlg, Datapath, DatapathInfo, DatapathTrait, Report};
+use portus::{CongAlg, CongAlgBuilder, Datapath, DatapathInfo, DatapathTrait, Report};
 use std::collections::HashMap;
 
 pub mod cubic;
@@ -16,6 +16,7 @@ mod bin_helper;
 pub use bin_helper::{make_args, start};
 
 pub const DEFAULT_SS_THRESH: u32 = 0x7fff_ffff;
+pub const DEFAULT_SS_THRESH_STR: &'static str = "2147483647";
 
 pub struct GenericCongAvoidMeasurements {
     pub acked: u32,
@@ -54,7 +55,7 @@ pub trait GenericCongAvoidAlg {
     fn args<'a, 'b>() -> Vec<clap::Arg<'a, 'b>> {
         vec![]
     }
-    fn with_args(matches: clap::ArgMatches) -> Self;
+    fn with_args(matches: &clap::ArgMatches) -> Self;
     fn new_flow(&self, logger: Option<slog::Logger>, init_cwnd: u32, mss: u32) -> Self::Flow;
 }
 
@@ -250,6 +251,84 @@ impl<T: Ipc, A: GenericCongAvoidAlg> CongAlg<T> for Alg<A> {
         s.update_cwnd();
 
         s
+    }
+}
+
+
+use clap::Arg;
+impl<'a,'b, A: GenericCongAvoidAlg> CongAlgBuilder<'a,'b> for Alg<A> {
+    fn args() -> clap::App<'a,'b> {
+        clap::App::new("CCP generic congestion avoidance")
+            .version("0.4.0")
+            .author("CCP Project <ccp@csail.mit.edu>")
+            .about("CCP implementation of a congestion avoidance algorithm")
+            .arg(Arg::with_name("ipc")
+                 .long("ipc")
+                 .help("Sets the type of ipc to use: (netlink|unix)")
+                 .default_value("unix")
+                 .validator(portus::algs::ipc_valid))
+            .arg(Arg::with_name("init_cwnd")
+                 .long("init_cwnd")
+                 .help("Sets the initial congestion window, in bytes. Setting 0 will use datapath default.")
+                 .default_value("0"))
+            .arg(Arg::with_name("ss_thresh")
+                 .long("ss_thresh")
+                 .help("Sets the slow start threshold, in bytes")
+                 .default_value(&DEFAULT_SS_THRESH_STR))
+            .arg(Arg::with_name("ss_in_fold")
+                 .long("ss_in_fold")
+                 .help("Implement slow start in the datapath"))
+            .arg(Arg::with_name("report_per_ack")
+                 .long("per_ack")
+                 .help("Specifies that the datapath should send a measurement upon every ACK"))
+            .arg(Arg::with_name("report_per_interval")
+                 .long("report_interval_ms")
+                 .short("i")
+                 .takes_value(true))
+            .group(clap::ArgGroup::with_name("interval")
+                 .args(&["report_per_ack", "report_per_interval"])
+                 .required(false))
+            .arg(Arg::with_name("compensate_update")
+                 .long("compensate_update")
+                 .help("Scale the congestion window update during slow start to compensate for reporting delay"))
+            .arg(Arg::with_name("deficit_timeout")
+                 .long("deficit_timeout")
+                 .default_value("0")
+                 .help("Number of RTTs to wait after a loss event to allow further CWND reductions. \
+                       Default 0 means CWND deficit counting is enforced strictly with no timeout."))
+            .args(&A::args())
+    }
+
+    fn with_arg_matches(args: &clap::ArgMatches, logger: Option<slog::Logger>) -> Result<Self, portus::Error> {
+
+        Ok(
+            Self{
+                ss_thresh: u32::from_str_radix(args.value_of("ss_thresh").unwrap(), 10)?,
+                init_cwnd: u32::from_str_radix(args.value_of("init_cwnd").unwrap(), 10)?,
+                report_option: if args.is_present("report_per_ack") {
+                    GenericCongAvoidConfigReport::Ack
+                } else if args.is_present("report_per_interval") {
+                    GenericCongAvoidConfigReport::Interval(time::Duration::milliseconds(
+                        args
+                            .value_of("report_per_interval")
+                            .unwrap()
+                            .parse()
+                            .unwrap(),
+                    ))
+                } else {
+                    GenericCongAvoidConfigReport::Rtt
+                },
+                ss: if args.is_present("ss_in_fold") {
+                    GenericCongAvoidConfigSS::Datapath
+                } else {
+                    GenericCongAvoidConfigSS::Ccp
+                },
+                use_compensation: args.is_present("compensate_update"),
+                deficit_timeout: u32::from_str_radix(args.value_of("deficit_timeout").unwrap(), 10)?,
+                logger: logger.into(),
+                alg: A::with_args(args),
+            }
+        )
     }
 }
 

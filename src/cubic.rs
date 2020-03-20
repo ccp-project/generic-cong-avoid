@@ -1,10 +1,12 @@
 extern crate time;
 extern crate slog;
+extern crate portus_export;
 
 use GenericCongAvoidAlg;
 use GenericCongAvoidFlow;
 use GenericCongAvoidMeasurements;
 
+#[portus_export::register_ccp_alg]
 #[derive(Default)]
 pub struct Cubic {
     pkt_size: u32,
@@ -91,7 +93,7 @@ impl GenericCongAvoidAlg for Cubic {
         "cubic"
     }
     
-    fn with_args(_: clap::ArgMatches) -> Self {
+    fn with_args(_: &clap::ArgMatches) -> Self {
         Default::default()
     }
 

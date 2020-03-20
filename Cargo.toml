@@ -10,6 +10,7 @@ license = "ISC"
 [dependencies]
 clap = "2.29"
 portus = { git = "https://github.com/ccp-project/portus", branch = "many_to_one" }
+portus_export = { git = "https://github.com/ccp-project/portus", branch = "many_to_one" }
 slog = {version = "2"}
 time = "0.1"
 

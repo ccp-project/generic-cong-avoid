@@ -82,7 +82,7 @@ pub fn make_args<A: GenericCongAvoidAlg>(
             use_compensation: matches.is_present("compensate_update"),
             deficit_timeout: u32::from_str_radix(matches.value_of("deficit_timeout").unwrap(), 10)?,
             logger: logger.into(),
-            alg: A::with_args(matches),
+            alg: A::with_args(&matches),
         },
         ipc,
     ))

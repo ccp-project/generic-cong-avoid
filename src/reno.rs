@@ -1,9 +1,11 @@
 extern crate slog;
+extern crate portus_export;
 
 use GenericCongAvoidAlg;
 use GenericCongAvoidFlow;
 use GenericCongAvoidMeasurements;
 
+#[portus_export::register_ccp_alg]
 #[derive(Default)]
 pub struct Reno {
     mss: u32,
@@ -18,7 +20,7 @@ impl GenericCongAvoidAlg for Reno {
         "reno"
     }
 
-    fn with_args(_: clap::ArgMatches) -> Self {
+    fn with_args(_: &clap::ArgMatches) -> Self {
         Default::default()
     }
 
