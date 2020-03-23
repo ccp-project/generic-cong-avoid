@@ -1,5 +1,5 @@
 [package]
-name = "generic_cong_avoid"
+name = "ccp_generic_cong_avoid"
 version = "0.2.1"
 authors = ["Akshay Narayan <akshayn@mit.edu>"]
 description = "A Congestion Control Plane"

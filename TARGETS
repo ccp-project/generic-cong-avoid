@@ -1,0 +1,11 @@
+rust_library(
+    name = "ccp_generic_cong_avoid",
+    srcs = glob([ 'src/*.rs' ], exclude=[ 'src/bin_helper.rs' ]),
+    deps = [
+        "fbsource//third-party/rust:clap",
+        "fbsource//third-party/rust:portus",
+        "fbsource//third-party/rust:portus_export",
+        "fbsource//third-party/rust:slog",
+        "fbsource//third-party/rust:time",
+    ],
+)
