@@ -2,11 +2,10 @@ extern crate time;
 extern crate slog;
 extern crate portus_export;
 
-use GenericCongAvoidAlg;
-use GenericCongAvoidFlow;
-use GenericCongAvoidMeasurements;
+pub use crate::GenericCongAvoidAlg;
+pub use crate::GenericCongAvoidFlow;
+pub use crate::GenericCongAvoidMeasurements;
 
-#[portus_export::register_ccp_alg]
 #[derive(Default)]
 pub struct Cubic {
     pkt_size: u32,
