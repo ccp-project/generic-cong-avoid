@@ -1,4 +1,5 @@
 use crate::{GenericCongAvoidAlg, GenericCongAvoidFlow, GenericCongAvoidMeasurements};
+use std::time::{Duration, Instant};
 
 #[derive(Default)]
 pub struct Cubic {
@@ -12,9 +13,9 @@ pub struct Cubic {
     fast_convergence: bool,
     c: f64,
     wlast_max: f64,
-    epoch_start: f64,
+    epoch_start: Option<Instant>,
     origin_point: f64,
-    d_min: f64,
+    d_min: Option<Duration>,
     wtcp: f64,
     k: f64,
     ack_cnt: f64,
@@ -24,9 +25,8 @@ pub struct Cubic {
 impl Cubic {
     fn cubic_update(&mut self) {
         self.ack_cnt += 1.0;
-        if self.epoch_start <= 0.0 {
-            self.epoch_start =
-                (time::get_time().sec as f64) + f64::from(time::get_time().nsec) / 1_000_000_000.0;
+        if self.epoch_start.is_none() {
+            self.epoch_start = Some(Instant::now());
             if self.cwnd < self.wlast_max {
                 let temp = (self.wlast_max - self.cwnd) / self.c;
                 self.k = (temp.max(0.0)).powf(1.0 / 3.0);
@@ -40,10 +40,8 @@ impl Cubic {
             self.wtcp = self.cwnd
         }
 
-        let t = (time::get_time().sec as f64)
-            + f64::from(time::get_time().nsec) / 1_000_000_000.0
-            + self.d_min
-            - self.epoch_start;
+        let d_min = self.d_min.unwrap_or(Duration::from_millis(100));
+        let t = (Instant::now() - d_min - self.epoch_start.unwrap()).as_secs_f64();
         let target = self.origin_point + self.c * ((t - self.k) * (t - self.k) * (t - self.k));
         if target > self.cwnd {
             self.cnt = self.cwnd / (target - self.cwnd);
@@ -69,9 +67,9 @@ impl Cubic {
 
     fn cubic_reset(&mut self) {
         self.wlast_max = 0.0;
-        self.epoch_start = -0.1;
+        self.epoch_start = None;
         self.origin_point = 0.0;
-        self.d_min = -0.1;
+        self.d_min = None;
         self.wtcp = 0.0;
         self.k = 0.0;
         self.ack_cnt = 0.0;
@@ -94,19 +92,11 @@ impl GenericCongAvoidAlg for Cubic {
             pkt_size: mss,
             init_cwnd: init_cwnd / mss,
             cwnd: f64::from(init_cwnd / mss),
-            cwnd_cnt: 0.0f64,
             tcp_friendliness: true,
-            beta: 0.3f64,
             fast_convergence: true,
+            beta: 0.3f64,
             c: 0.4f64,
-            wlast_max: 0.0f64,
-            epoch_start: -0.1f64,
-            origin_point: 0.0f64,
-            d_min: -0.1f64,
-            wtcp: 0.0f64,
-            k: 0.0f64,
-            ack_cnt: 0.0f64,
-            cnt: 0.0f64,
+            ..Default::default()
         }
     }
 }
@@ -121,11 +111,15 @@ impl GenericCongAvoidFlow for Cubic {
     }
 
     fn increase(&mut self, m: &GenericCongAvoidMeasurements) {
-        let f_rtt = (f64::from(m.rtt)) * 0.000_001;
+        let f_rtt = Duration::from_micros(m.rtt as _);
         let no_of_acks = ((f64::from(m.acked)) / (f64::from(self.pkt_size))) as u32;
-        for _i in 0..no_of_acks {
-            if self.d_min <= 0.0 || f_rtt < self.d_min {
-                self.d_min = f_rtt;
+        for _ in 0..no_of_acks {
+            match self.d_min {
+                None => self.d_min = Some(f_rtt),
+                Some(dmin) if f_rtt < dmin => {
+                    self.d_min = Some(f_rtt);
+                }
+                _ => (),
             }
 
             self.cubic_update();
@@ -139,7 +133,7 @@ impl GenericCongAvoidFlow for Cubic {
     }
 
     fn reduction(&mut self, _m: &GenericCongAvoidMeasurements) {
-        self.epoch_start = -0.1;
+        self.epoch_start = None;
         if self.cwnd < self.wlast_max && self.fast_convergence {
             self.wlast_max = self.cwnd * ((2.0 - self.beta) / 2.0);
         } else {

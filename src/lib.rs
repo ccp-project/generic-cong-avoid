@@ -13,6 +13,7 @@ use portus::ipc::Ipc;
 use portus::lang::Scope;
 use portus::{CongAlg, Datapath, DatapathInfo, DatapathTrait, Report};
 use std::collections::HashMap;
+use std::time::{Duration, Instant};
 use tracing::{debug, warn};
 
 pub mod cubic;
@@ -39,7 +40,7 @@ pub struct GenericCongAvoidMeasurements {
 pub enum GenericCongAvoidConfigReport {
     Ack,
     Rtt,
-    Interval(time::Duration),
+    Interval(Duration),
 }
 
 /// Configuration option: which implementation of slow start?
@@ -233,7 +234,7 @@ impl<T: Ipc, A: GenericCongAvoidAlg> CongAlg<T> for Alg<A> {
             deficit_timeout: self.deficit_timeout,
             init_cwnd,
             curr_cwnd_reduction: 0,
-            last_cwnd_reduction: time::now().to_timespec() - time::Duration::milliseconds(500),
+            last_cwnd_reduction: Instant::now() - Duration::from_millis(500),
             alg: self.alg.new_flow(init_cwnd, info.mss),
         };
 
@@ -268,7 +269,7 @@ pub struct Flow<T: Ipc, A: GenericCongAvoidFlow> {
     control_channel: Datapath<T>,
 
     curr_cwnd_reduction: u32,
-    last_cwnd_reduction: time::Timespec,
+    last_cwnd_reduction: Instant,
 
     in_startup: bool,
     mss: u32,
@@ -330,11 +331,11 @@ impl<I: Ipc, A: GenericCongAvoidFlow> portus::Flow for Flow<I, A> {
 
 impl<T: Ipc, A: GenericCongAvoidFlow> Flow<T, A> {
     /// Make no updates in the datapath, and send a report after an interval
-    fn install_datapath_interval(&mut self, interval: time::Duration) -> Scope {
+    fn install_datapath_interval(&mut self, interval: Duration) -> Scope {
         self.control_channel
             .set_program(
                 "DatapathIntervalProg",
-                Some(&[("reportTime", interval.num_microseconds().unwrap() as u32)][..]),
+                Some(&[("reportTime", interval.as_micros() as u32)][..]),
             )
             .unwrap()
     }
@@ -429,9 +430,9 @@ impl<T: Ipc, A: GenericCongAvoidFlow> Flow<T, A> {
     fn maybe_reduce_cwnd(&mut self, m: &GenericCongAvoidMeasurements) {
         if m.loss > 0 || m.sacked > 0 {
             if self.deficit_timeout > 0
-                && ((time::now().to_timespec() - self.last_cwnd_reduction)
-                    > time::Duration::microseconds(
-                        (f64::from(self.rtt) * self.deficit_timeout as f64) as i64,
+                && ((Instant::now() - self.last_cwnd_reduction)
+                    > Duration::from_millis(
+                        (f64::from(self.rtt) * self.deficit_timeout as f64) as _,
                     ))
             {
                 self.curr_cwnd_reduction = 0;
@@ -444,7 +445,7 @@ impl<T: Ipc, A: GenericCongAvoidFlow> Flow<T, A> {
                 || (m.acked > 0 && self.alg.curr_cwnd() == self.ss_thresh)
             {
                 self.alg.reduction(m);
-                self.last_cwnd_reduction = time::now().to_timespec();
+                self.last_cwnd_reduction = Instant::now();
                 self.ss_thresh = self.alg.curr_cwnd();
                 self.update_cwnd();
             }

@@ -58,7 +58,7 @@ pub fn make_args<A: GenericCongAvoidAlg>(
             report_option: if matches.is_present("report_per_ack") {
                 GenericCongAvoidConfigReport::Ack
             } else if matches.is_present("report_per_interval") {
-                GenericCongAvoidConfigReport::Interval(time::Duration::milliseconds(
+                GenericCongAvoidConfigReport::Interval(std::time::Duration::from_millis(
                     matches
                         .value_of("report_per_interval")
                         .unwrap()
