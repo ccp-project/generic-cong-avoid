@@ -1,8 +1,4 @@
-extern crate slog;
-
-use GenericCongAvoidAlg;
-use GenericCongAvoidFlow;
-use GenericCongAvoidMeasurements;
+use crate::{GenericCongAvoidAlg, GenericCongAvoidFlow, GenericCongAvoidMeasurements};
 
 #[derive(Default)]
 pub struct Reno {
@@ -22,7 +18,7 @@ impl GenericCongAvoidAlg for Reno {
         Default::default()
     }
 
-    fn new_flow(&self, _logger: Option<slog::Logger>, init_cwnd: u32, mss: u32) -> Self::Flow {
+    fn new_flow(&self, init_cwnd: u32, mss: u32) -> Self::Flow {
         Reno {
             mss,
             init_cwnd: f64::from(init_cwnd),

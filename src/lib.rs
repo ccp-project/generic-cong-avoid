@@ -9,26 +9,22 @@
 //! to write custom datapath programs: the generic-cong-avoid layer collects a fixed set of measurements
 //! detailed in [`GenericCongAvoidMeasurements`](./struct.GenericCongAvoidMeasurements.html).
 
-extern crate clap;
-extern crate time;
-#[macro_use]
-extern crate slog;
-extern crate portus;
-
-use std::collections::HashMap;
 use portus::ipc::Ipc;
 use portus::lang::Scope;
 use portus::{CongAlg, Datapath, DatapathInfo, DatapathTrait, Report};
+use std::collections::HashMap;
+use tracing::{debug, warn};
 
 pub mod cubic;
 pub mod reno;
 
 mod bin_helper;
-pub use bin_helper::{make_args, start};
+pub use bin_helper::make_args;
 
 pub const DEFAULT_SS_THRESH: u32 = 0x7fff_ffff;
 
 /// The fixed list of measurements available to generic-cong-avoid algorithms
+#[derive(Debug, Clone, Copy)]
 pub struct GenericCongAvoidMeasurements {
     pub acked: u32,
     pub was_timeout: bool,
@@ -72,7 +68,7 @@ pub trait GenericCongAvoidAlg {
         vec![]
     }
     fn with_args(matches: clap::ArgMatches) -> Self;
-    fn new_flow(&self, logger: Option<slog::Logger>, init_cwnd: u32, mss: u32) -> Self::Flow;
+    fn new_flow(&self, init_cwnd: u32, mss: u32) -> Self::Flow;
 }
 
 /// The generic-cong-avoid type which implements `portus::CongAlg`.
@@ -83,7 +79,6 @@ pub struct Alg<A: GenericCongAvoidAlg> {
     pub ss: GenericCongAvoidConfigSS,
     pub ss_thresh: u32,
     pub use_compensation: bool,
-    pub logger: Option<slog::Logger>,
     pub alg: A,
 }
 
@@ -228,7 +223,6 @@ impl<T: Ipc, A: GenericCongAvoidAlg> CongAlg<T> for Alg<A> {
 
         let mut s = Flow {
             control_channel: control,
-            logger: self.logger.clone(),
             report_option: self.report_option,
             sc: Default::default(),
             ss_thresh: self.ss_thresh,
@@ -240,7 +234,7 @@ impl<T: Ipc, A: GenericCongAvoidAlg> CongAlg<T> for Alg<A> {
             init_cwnd,
             curr_cwnd_reduction: 0,
             last_cwnd_reduction: time::now().to_timespec() - time::Duration::milliseconds(500),
-            alg: self.alg.new_flow(self.logger.clone(), init_cwnd, info.mss),
+            alg: self.alg.new_flow(init_cwnd, info.mss),
         };
 
         match (self.ss, self.report_option) {
@@ -272,7 +266,6 @@ pub struct Flow<T: Ipc, A: GenericCongAvoidFlow> {
     ss_thresh: u32,
     use_compensation: bool,
     control_channel: Datapath<T>,
-    logger: Option<slog::Logger>,
 
     curr_cwnd_reduction: u32,
     last_cwnd_reduction: time::Timespec,
@@ -317,24 +310,21 @@ impl<I: Ipc, A: GenericCongAvoidFlow> portus::Flow for Flow<I, A> {
         self.alg.increase(&ms);
         self.maybe_reduce_cwnd(&ms);
         if self.curr_cwnd_reduction > 0 {
-            self.logger.as_ref().map(|log| {
-                debug!(log, "in cwnd reduction"; "acked" => ms.acked / self.mss, "deficit" => self.curr_cwnd_reduction);
-            });
+            debug!(acked= ?(ms.acked / self.mss), deficit = ?self.curr_cwnd_reduction, "in cwnd reduction");
             return;
         }
 
         self.update_cwnd();
 
-        self.logger.as_ref().map(|log| {
-            debug!(log, "got ack"; 
-                "acked(pkts)" => ms.acked / self.mss,
-                "curr_cwnd (pkts)" => self.alg.curr_cwnd() / self.mss,
-                "inflight (pkts)" => ms.inflight,
-                "loss" => ms.loss,
-                "ssthresh" => self.ss_thresh,
-                "rtt" => ms.rtt,
-            );
-        });
+        debug!(
+            acked_pkts = ?(ms.acked / self.mss),
+            curr_cwnd_pkts = ?(self.alg.curr_cwnd() / self.mss),
+            inflight_pkts = ?ms.inflight,
+            loss = ?ms.loss,
+            ssthresh = ?self.ss_thresh,
+            rtt = ?ms.rtt,
+            "got ack"
+        );
     }
 }
 
@@ -376,11 +366,7 @@ impl<T: Ipc, A: GenericCongAvoidFlow> Flow<T, A> {
             .control_channel
             .update_field(&self.sc, &[("Cwnd", self.alg.curr_cwnd())])
         {
-            self.logger.as_ref().map(|log| {
-                warn!(log, "Cwnd update error";
-                      "err" => ?e,
-                );
-            });
+            warn!(err = ?e, "Cwnd update error");
         }
     }
 
@@ -430,12 +416,11 @@ impl<T: Ipc, A: GenericCongAvoidFlow> Flow<T, A> {
         self.alg.set_cwnd(self.init_cwnd);
         self.curr_cwnd_reduction = 0;
 
-        self.logger.as_ref().map(|log| {
-            warn!(log, "timeout"; 
-                "curr_cwnd (pkts)" => self.init_cwnd / self.mss, 
-                "ssthresh" => self.ss_thresh,
-            );
-        });
+        warn!(
+            curr_cwnd_pkts = ?(self.init_cwnd / self.mss),
+            ssthresh = ?self.ss_thresh,
+            "timeout"
+        );
 
         self.update_cwnd();
         return;
@@ -447,7 +432,8 @@ impl<T: Ipc, A: GenericCongAvoidFlow> Flow<T, A> {
                 && ((time::now().to_timespec() - self.last_cwnd_reduction)
                     > time::Duration::microseconds(
                         (f64::from(self.rtt) * self.deficit_timeout as f64) as i64,
-                    )) {
+                    ))
+            {
                 self.curr_cwnd_reduction = 0;
             }
 

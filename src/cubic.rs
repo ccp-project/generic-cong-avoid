@@ -1,9 +1,4 @@
-extern crate time;
-extern crate slog;
-
-use GenericCongAvoidAlg;
-use GenericCongAvoidFlow;
-use GenericCongAvoidMeasurements;
+use crate::{GenericCongAvoidAlg, GenericCongAvoidFlow, GenericCongAvoidMeasurements};
 
 #[derive(Default)]
 pub struct Cubic {
@@ -24,7 +19,6 @@ pub struct Cubic {
     k: f64,
     ack_cnt: f64,
     cnt: f64,
-    cubic_rtt: f64,
 }
 
 impl Cubic {
@@ -90,12 +84,12 @@ impl GenericCongAvoidAlg for Cubic {
     fn name() -> &'static str {
         "cubic"
     }
-    
+
     fn with_args(_: clap::ArgMatches) -> Self {
         Default::default()
     }
 
-    fn new_flow(&self, _logger: Option<slog::Logger>, init_cwnd: u32, mss: u32) -> Self::Flow {
+    fn new_flow(&self, init_cwnd: u32, mss: u32) -> Self::Flow {
         Cubic {
             pkt_size: mss,
             init_cwnd: init_cwnd / mss,
@@ -113,7 +107,6 @@ impl GenericCongAvoidAlg for Cubic {
             k: 0.0f64,
             ack_cnt: 0.0f64,
             cnt: 0.0f64,
-            cubic_rtt: 0.1f64,
         }
     }
 }
@@ -128,7 +121,6 @@ impl GenericCongAvoidFlow for Cubic {
     }
 
     fn increase(&mut self, m: &GenericCongAvoidMeasurements) {
-        self.cubic_rtt = (f64::from(m.rtt)) * 0.000_001;
         let f_rtt = (f64::from(m.rtt)) * 0.000_001;
         let no_of_acks = ((f64::from(m.acked)) / (f64::from(self.pkt_size))) as u32;
         for _i in 0..no_of_acks {

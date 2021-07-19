@@ -1,26 +1,18 @@
-extern crate clap;
-extern crate time;
-
-#[macro_use]
-extern crate slog;
-
-extern crate generic_cong_avoid;
-extern crate portus;
-
-use generic_cong_avoid::reno::Reno;
+use generic_cong_avoid::{reno::Reno, Alg};
+use tracing::{info, warn};
 
 fn main() {
-    let log = portus::algs::make_logger();
-    let (alg, ipc) = generic_cong_avoid::make_args("CCP Reno", log.clone())
-        .map_err(|e| warn!(log, "bad argument"; "err" => ?e))
+    let (alg, ipc): (Alg<Reno>, _) = generic_cong_avoid::make_args("CCP Reno")
+        .map_err(|err| warn!(?err, "bad argument"))
         .unwrap();
 
-    info!(log, "starting CCP"; 
-        "algorithm" => "Reno",
-        "ipc" => ipc.clone(),
-        "reports" => ?alg.report_option,
-        "slow_start_mode" => ?alg.ss,
+    info!(
+        algorithm = "Reno",
+        ?ipc,
+        reports = ?alg.report_option,
+        slow_start_mode = ?alg.ss,
+        "starting CCP"
     );
 
-    generic_cong_avoid::start::<Reno>(ipc.as_str(), log, alg);
+    portus::start!(ipc.as_str(), alg).unwrap();
 }

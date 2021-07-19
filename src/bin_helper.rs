@@ -1,18 +1,11 @@
-use clap;
-use clap::Arg;
-use portus;
-use portus::ipc::{BackendBuilder, Blocking};
-use slog;
-use std;
-use time;
-use {
+use crate::{
     Alg, GenericCongAvoidAlg, GenericCongAvoidConfigReport, GenericCongAvoidConfigSS,
     DEFAULT_SS_THRESH,
 };
+use clap::Arg;
 
 pub fn make_args<A: GenericCongAvoidAlg>(
     name: &str,
-    logger: impl Into<Option<slog::Logger>>,
 ) -> Result<(Alg<A>, String), std::num::ParseIntError> {
     let ss_thresh_default = format!("{}", DEFAULT_SS_THRESH);
     let matches = clap::App::new(name)
@@ -82,42 +75,8 @@ pub fn make_args<A: GenericCongAvoidAlg>(
             },
             use_compensation: matches.is_present("compensate_update"),
             deficit_timeout: u32::from_str_radix(matches.value_of("deficit_timeout").unwrap(), 10)?,
-            logger: logger.into(),
             alg: A::with_args(matches),
         },
         ipc,
     ))
-}
-
-/// Wrapper around `portus::run` specific to types implementing `GenericCongAvoidAlg`.
-pub fn start<A: GenericCongAvoidAlg>(ipc: &str, log: slog::Logger, alg: Alg<A>)
-where
-    A: 'static,
-{
-    match ipc {
-        "unix" => {
-            use portus::ipc::unix::Socket;
-            let b = Socket::<Blocking>::new("in", "out")
-                .map(|sk| BackendBuilder { sock: sk })
-                .expect("ipc initialization");
-            portus::run::<_, Alg<A>>(b, portus::Config { logger: Some(log) }, alg).unwrap();
-        }
-        #[cfg(all(target_os = "linux"))]
-        "netlink" => {
-            use portus::ipc::netlink::Socket;
-            let b = Socket::<Blocking>::new()
-                .map(|sk| BackendBuilder { sock: sk })
-                .expect("ipc initialization");
-            portus::run::<_, Alg<A>>(b, portus::Config { logger: Some(log) }, alg).unwrap();
-        }
-        #[cfg(all(target_os = "linux"))]
-        "char" => {
-            use portus::ipc::kp::Socket;
-            let b = Socket::<Blocking>::new()
-                .map(|sk| BackendBuilder { sock: sk })
-                .expect("char initialization");
-            portus::run::<_, Alg<A>>(b, portus::Config { logger: Some(log) }, alg).unwrap()
-        }
-        _ => unreachable!(),
-    }
 }
