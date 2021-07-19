@@ -24,14 +24,19 @@ pub use bin_helper::make_args;
 
 pub const DEFAULT_SS_THRESH: u32 = 0x7fff_ffff;
 
-/// The fixed list of measurements available to generic-cong-avoid algorithms
+/// The fixed list of measurements available to generic-cong-avoid algorithms.
 #[derive(Debug, Clone, Copy)]
 pub struct GenericCongAvoidMeasurements {
+    /// In bytes.
     pub acked: u32,
     pub was_timeout: bool,
+    /// In packets.
     pub sacked: u32,
+    /// In packets.
     pub loss: u32,
+    /// In microseconds.
     pub rtt: u32,
+    /// In packets.
     pub inflight: u32,
 }
 
@@ -52,10 +57,16 @@ pub enum GenericCongAvoidConfigSS {
 
 /// An individual generic-cong-avoid flow
 pub trait GenericCongAvoidFlow {
+    /// Return the current cwnd.
     fn curr_cwnd(&self) -> u32;
+    /// If the cwnd has been overridden, this method will be called to tell the implementation
+    /// about it.
     fn set_cwnd(&mut self, cwnd: u32);
+    /// An congestion increase event occurred: bytes were acked without an indication of loss.
     fn increase(&mut self, m: &GenericCongAvoidMeasurements);
+    /// An congestion reduction event occurred: an indication of loss was present.
     fn reduction(&mut self, m: &GenericCongAvoidMeasurements);
+    /// A timeout occurred. The implementation should reset its state.
     fn reset(&mut self) {}
 }
 
