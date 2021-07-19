@@ -2,6 +2,7 @@ use generic_cong_avoid::{cubic::Cubic, Alg};
 use tracing::{info, warn};
 
 fn main() {
+    tracing_subscriber::fmt::init();
     let (alg, ipc): (Alg<Cubic>, _) = generic_cong_avoid::make_args("CCP Cubic")
         .map_err(|err| warn!(?err, "bad argument"))
         .unwrap();
