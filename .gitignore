@@ -1,3 +1,4 @@
 target
 *.rustfmt
 Cargo.lock
+python/py_generic_cong_avoid/__pycache__/

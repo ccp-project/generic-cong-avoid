@@ -188,6 +188,7 @@ impl GenericCongAvoidFlow for PyGenericCongAvoidAlg<'_> {
 
 #[allow(non_snake_case)]
 #[pymodule]
+#[pyo3(name = "py_generic_cong_avoid")]
 fn init_mod(_py: Python, m: &PyModule) -> PyResult<()> {
     #[pyfn(m)]
     fn _start(
