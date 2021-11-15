@@ -1,28 +1,22 @@
 [package]
 name = "py_generic_cong_avoid"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["Frank Cangialosi <frankc@csail.mit.edu>"]
+edition = "2018"
 
 [dependencies]
-clap = "2.29"
+clap = "2.33"
 fnv = "1"
 generic_cong_avoid = { path = "../" }
-pyportus = "0.4.0"
-portus = "0.4"
+portus = "0.6"
 simple-signal = "1"
-slog = { version = "2" }
-slog-async = "2"
-slog-term = "2"
-time = "0.1"
+tracing = "0.1"
+tracing-subscriber = "0.2"
 
 [dependencies.pyo3]
-version = "0.2.7"
-features = ["extension-module"]
-default-features = false
-
-[features]
-bench = []
+version = "0.14"
+features = ["extension-module", "macros"]
 
 [lib]
 name = "py_generic_cong_avoid"
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "lib"]
