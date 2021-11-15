@@ -1,5 +1,5 @@
 import sys
-import generic_cong_avoid
+import py_generic_cong_avoid as generic_cong_avoid
 
 class RenoFlow(generic_cong_avoid.FlowBase):
     def __init__(self, init_cwnd, mss):
