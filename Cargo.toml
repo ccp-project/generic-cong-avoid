@@ -1,6 +1,6 @@
 [package]
 name = "generic_cong_avoid"
-version = "0.3.0"
+version = "0.4.0"
 authors = ["Akshay Narayan <akshayn@mit.edu>"]
 description = "A Congestion Control Plane"
 homepage = "https://ccp-project.github.io"
@@ -13,7 +13,7 @@ bin = ["tracing-subscriber"]
 
 [dependencies]
 clap = "2"
-portus = "0.6"
+portus = "0.7"
 tracing = "0.1"
 tracing-subscriber = { version = "0.2", optional = true }
 
